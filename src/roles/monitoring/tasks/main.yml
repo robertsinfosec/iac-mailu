@@ -1,0 +1,233 @@
+---
+# Main tasks file for monitoring role
+
+- name: Include monitoring variables
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../vault/secrets.yml"
+  no_log: true
+  
+- name: Ensure monitoring directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0750'
+  loop:
+    - "{{ monitoring_base_dir }}"
+    - "{{ monitoring_data_dir }}"
+    - "{{ prometheus_config_dir }}"
+    - "{{ prometheus_data_dir }}"
+    - "{{ grafana_config_dir }}"
+    - "{{ grafana_data_dir }}"
+    - "{{ alertmanager_config_dir }}"
+    - "{{ alertmanager_data_dir }}"
+    - "{{ loki_config_dir }}"
+    - "{{ loki_data_dir }}"
+    - "{{ promtail_config_dir }}"
+  when: monitoring_enabled | bool
+
+- name: Check if Docker is installed
+  ansible.builtin.command: which docker
+  register: docker_check
+  changed_when: false
+  failed_when: false
+
+- name: Ensure Docker is installed
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose
+    state: present
+    update_cache: yes
+  when: 
+    - monitoring_enabled | bool 
+    - docker_check.rc != 0
+
+- name: Ensure Docker is running and enabled
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: yes
+  when: monitoring_enabled | bool
+
+- name: Create monitoring Docker network
+  community.docker.docker_network:
+    name: "{{ monitoring_network_name }}"
+    state: present
+  when: monitoring_enabled | bool
+
+- name: Generate Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ prometheus_config_dir }}/prometheus.yml"
+    mode: '0644'
+  when: 
+    - monitoring_enabled | bool
+    - prometheus_enabled | bool
+  notify: Restart prometheus
+
+- name: Generate Prometheus rules
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ prometheus_config_dir }}/{{ item }}"
+    mode: '0644'
+  loop:
+    - alert_rules.yml
+    - recording_rules.yml
+  when: 
+    - monitoring_enabled | bool
+    - prometheus_enabled | bool
+  notify: Restart prometheus
+
+- name: Generate Alertmanager configuration
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: "{{ alertmanager_config_dir }}/alertmanager.yml"
+    mode: '0644'
+  when: 
+    - monitoring_enabled | bool
+    - alertmanager_enabled | bool
+  notify: Restart alertmanager
+
+- name: Generate Loki configuration
+  ansible.builtin.template:
+    src: loki-config.yml.j2
+    dest: "{{ loki_config_dir }}/loki-config.yml"
+    mode: '0644'
+  when: 
+    - monitoring_enabled | bool
+    - loki_enabled | bool
+  notify: Restart loki
+
+- name: Generate Promtail configuration
+  ansible.builtin.template:
+    src: promtail-config.yml.j2
+    dest: "{{ promtail_config_dir }}/promtail-config.yml"
+    mode: '0644'
+  when: 
+    - monitoring_enabled | bool
+    - promtail_enabled | bool
+  notify: Restart promtail
+
+- name: Generate Blackbox exporter configuration
+  ansible.builtin.template:
+    src: blackbox.yml.j2
+    dest: "{{ monitoring_base_dir }}/blackbox.yml"
+    mode: '0644'
+  when: 
+    - monitoring_enabled | bool
+    - blackbox_exporter_enabled | bool
+  notify: Restart blackbox-exporter
+
+- name: Generate Grafana configuration
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: "{{ grafana_config_dir }}/grafana.ini"
+    mode: '0644'
+  when: 
+    - monitoring_enabled | bool
+    - grafana_enabled | bool
+  notify: Restart grafana
+
+- name: Generate Grafana provisioning
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ grafana_config_dir }}/{{ item.dest }}"
+    mode: '0644'
+  loop:
+    - { src: datasources.yml.j2, dest: provisioning/datasources/datasources.yml }
+    - { src: dashboards.yml.j2, dest: provisioning/dashboards/dashboards.yml }
+  when: 
+    - monitoring_enabled | bool
+    - grafana_enabled | bool
+  notify: Restart grafana
+
+- name: Ensure Grafana provisioning directories exist
+  ansible.builtin.file:
+    path: "{{ grafana_config_dir }}/{{ item }}"
+    state: directory
+    mode: '0750'
+  loop:
+    - provisioning/datasources
+    - provisioning/dashboards
+    - provisioning/dashboards/json
+  when: 
+    - monitoring_enabled | bool
+    - grafana_enabled | bool
+
+- name: Copy Grafana dashboards
+  ansible.builtin.template:
+    src: "dashboards/{{ item }}.json.j2"
+    dest: "{{ grafana_config_dir }}/provisioning/dashboards/json/{{ item }}.json"
+    mode: '0644'
+  loop:
+    - mailu-overview
+    - server-metrics
+    - mail-delivery-stats
+    - mail-queue-monitoring
+    - security-overview
+  when: 
+    - monitoring_enabled | bool
+    - grafana_enabled | bool
+  notify: Restart grafana
+
+# Generate docker-compose file for the monitoring stack
+- name: Generate docker-compose.yml for monitoring
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ monitoring_base_dir }}/docker-compose.yml"
+    mode: '0644'
+  when: monitoring_enabled | bool
+  notify: Restart monitoring stack
+
+# Deploy the monitoring stack
+- name: Deploy monitoring stack using docker-compose
+  community.docker.docker_compose:
+    project_src: "{{ monitoring_base_dir }}"
+    state: present
+    pull: yes
+    remove_orphans: yes
+  register: deployment_result
+  when: monitoring_enabled | bool
+
+# Set up Traefik integration if monitoring UIs should be exposed
+- name: Configure Traefik for monitoring UIs
+  ansible.builtin.template:
+    src: traefik_monitoring.yml.j2
+    dest: "{{ traefik_config_dir }}/monitoring.yml"
+    mode: '0644'
+  when: 
+    - monitoring_enabled | bool
+    - monitoring_expose_ui | bool
+  notify: Restart Traefik container
+
+# Configure Mailu to expose metrics
+- name: Update Mailu docker-compose.yml to expose metrics
+  ansible.builtin.lineinfile:
+    path: "{{ mailu_base_dir }}/docker-compose.yml"
+    regexp: '^\s*- "{{ item.port }}:{{ item.port }}"'
+    line: '      - "{{ item.port }}:{{ item.port }}"'
+    insertafter: "{{ item.service }}:"
+  loop:
+    - { service: 'smtp', port: '{{ postfix_exporter_port }}' }
+    - { service: 'imap', port: '{{ dovecot_exporter_port }}' }
+    - { service: 'redis', port: '{{ redis_exporter_port }}' }
+  when: 
+    - monitoring_enabled | bool
+  notify: Restart Mailu stack
+
+# Create script to check mail flow
+- name: Create mail flow test script
+  ansible.builtin.template:
+    src: test-mail-flow.sh.j2
+    dest: "{{ monitoring_base_dir }}/test-mail-flow.sh"
+    mode: '0755'
+  when: monitoring_enabled | bool
+
+# Set up cron job to check mail flow periodically
+- name: Set up cron job for mail flow test
+  ansible.builtin.cron:
+    name: "Test mail flow"
+    job: "{{ monitoring_base_dir }}/test-mail-flow.sh >> {{ monitoring_base_dir }}/mail-flow-test.log 2>&1"
+    minute: "*/30"
+    state: present
+  when: monitoring_enabled | bool

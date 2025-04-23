@@ -1,0 +1,61 @@
+{
+  "Rules": [
+    {
+      "ID": "Daily Backups Expiration",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "{{ s3_path }}/daily/"
+      },
+      "Expiration": {
+        "Days": {{ backup_daily_retention }}
+      }
+    },
+    {
+      "ID": "Weekly Backups Expiration",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "{{ s3_path }}/weekly/"
+      },
+      "Expiration": {
+        "Days": {{ backup_weekly_retention * 7 }}
+      }
+    },
+    {
+      "ID": "Monthly Backups Expiration",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "{{ s3_path }}/monthly/"
+      },
+      "Expiration": {
+        "Days": {{ backup_monthly_retention * 30 }}
+      }
+    },
+    {
+      "ID": "Storage Tier Transition",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "{{ s3_path }}/"
+      },
+      "Transitions": [
+        {
+          "Days": 30,
+          "StorageClass": "STANDARD_IA"
+        },
+        {
+          "Days": 90,
+          "StorageClass": "GLACIER"
+        }
+      ],
+      "NoncurrentVersionTransitions": [
+        {
+          "NoncurrentDays": 30,
+          "StorageClass": "STANDARD_IA"
+        },
+        {
+          "NoncurrentDays": 90,
+          "StorageClass": "GLACIER"
+        }
+      ]
+    }
+  ]
+}

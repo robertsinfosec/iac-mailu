@@ -1,0 +1,91 @@
+---
+# Default values for backup role
+
+# Backup storage strategy (local, s3, b2, sftp)
+backup_strategy: "local"
+
+# Base directory for backups
+backup_base_dir: "/opt/mailu/backup"
+
+# Mailu data directory
+mailu_data_dir: "/opt/mailu/data"
+
+# Backup frequency
+backup_schedule_daily: true
+backup_schedule_weekly: true
+backup_schedule_monthly: true
+
+# Daily backup settings
+backup_daily_hour: 2
+backup_daily_minute: 0
+backup_daily_retention: 7  # days
+
+# Weekly backup settings
+backup_weekly_day: 0  # Sunday
+backup_weekly_hour: 3
+backup_weekly_minute: 0
+backup_weekly_retention: 4  # weeks
+
+# Monthly backup settings
+backup_monthly_day: 1  # First day of month
+backup_monthly_hour: 4
+backup_monthly_minute: 0
+backup_monthly_retention: 6  # months
+
+# Backup components
+backup_mailu_data: true
+backup_mailu_config: true
+backup_mailu_dkim: true
+backup_dmarc_reports: true
+backup_certificates: true
+backup_traefik_config: true
+backup_docker_compose: true
+
+# Compression settings
+backup_compression: true
+backup_compression_algorithm: "gzip"  # gzip, bzip2, xz
+
+# Encryption settings
+backup_encryption: false
+backup_encryption_passphrase_var: "vault_backup_passphrase"
+
+# Notification settings
+backup_notify_enabled: true
+backup_notify_method: "smtp"  # smtp, webhook
+backup_notify_on_success: false
+backup_notify_on_failure: true
+backup_notify_email: "admin@{{ primary_domain | default('example.com') }}"
+
+# S3 backup settings
+s3_bucket: "{{ primary_domain | default('example') }}-mail-backup"
+s3_region: "us-east-1"
+s3_endpoint: ""  # For non-AWS S3-compatible services
+s3_access_key_var: "vault_s3_access_key"
+s3_secret_key_var: "vault_s3_secret_key"
+s3_path: "mailu-backup"
+s3_storage_class: "STANDARD"  # STANDARD, STANDARD_IA, GLACIER
+
+# B2 backup settings
+b2_bucket: "{{ primary_domain | default('example') }}-mail-backup"
+b2_account_id_var: "vault_b2_account_id" 
+b2_application_key_var: "vault_b2_application_key"
+b2_path: "mailu-backup"
+
+# SFTP backup settings
+sftp_host: ""
+sftp_port: 22
+sftp_user: "backup"
+sftp_key_file_var: "vault_sftp_key_file"
+sftp_path: "/backup/mailu"
+
+# Database backup settings (if using external database)
+backup_database: false
+db_type: "postgresql"  # mysql, postgresql
+db_host: "localhost"
+db_port: 5432
+db_name: "mailu"
+db_user_var: "vault_db_user"
+db_password_var: "vault_db_password"
+
+# Debug mode
+backup_debug: false

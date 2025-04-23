@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""
+SMTP Notification Module for Mailu Health Check
+"""
+
+import smtplib
+import socket
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime
+
+class Notifier:
+    def __init__(self):
+        self.smtp_server = "{{ health_check_smtp_server }}"
+        self.smtp_port = {{ health_check_smtp_port }}
+        self.from_email = "{{ health_check_smtp_from }}"
+        self.to_email = "{{ health_check_notify_email }}"
+        self.hostname = "{{ ansible_hostname }}"
+        
+    def send(self, subject, message):
+        """Send a notification via SMTP."""
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = self.from_email
+            msg['To'] = self.to_email
+            msg['Subject'] = subject
+            
+            # Add timestamp and hostname to message
+            full_message = f"Time: {datetime.now().isoformat()}\n"
+            full_message += f"Host: {self.hostname}\n\n"
+            full_message += message
+            
+            msg.attach(MIMEText(full_message, 'plain'))
+            
+            # Connect to SMTP server and send message
+            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+            server.send_message(msg)
+            server.quit()
+            
+            return True
+        except Exception as e:
+            print(f"Failed to send email notification: {str(e)}")
+            return False

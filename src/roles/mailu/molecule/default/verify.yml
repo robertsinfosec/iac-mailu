@@ -1,0 +1,42 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Verify Mailu directory exists
+      ansible.builtin.stat:
+        path: "{{ mailu_base_dir }}"
+      register: mailu_dir
+      failed_when: not mailu_dir.stat.exists
+
+    - name: Check for Traefik configuration
+      ansible.builtin.stat:
+        path: "{{ traefik_config_dir }}/traefik.yml"
+      register: traefik_config
+      failed_when: not traefik_config.stat.exists
+
+    - name: Check for docker-compose.yml file
+      ansible.builtin.stat:
+        path: "{{ mailu_base_dir }}/docker-compose.yml"
+      register: docker_compose
+      failed_when: not docker_compose.stat.exists
+
+    - name: Check for .env file
+      ansible.builtin.stat:
+        path: "{{ mailu_base_dir }}/.env"
+      register: env_file
+      failed_when: not env_file.stat.exists
+
+    - name: Check for DOMAIN in .env file
+      ansible.builtin.lineinfile:
+        path: "{{ mailu_base_dir }}/.env"
+        line: "DOMAIN=example.com"
+        state: present
+      check_mode: true
+      register: domain_check
+      failed_when: domain_check is changed
+    
+    - name: Verify docker-compose.yml content
+      ansible.builtin.command: grep -q "mailu/front" {{ mailu_base_dir }}/docker-compose.yml
+      changed_when: false

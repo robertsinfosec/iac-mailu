@@ -1,0 +1,312 @@
+---
+# Main tasks file for backup role
+
+- name: Include backup variables
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../vault/secrets.yml"
+  no_log: true
+  
+- name: Ensure backup directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0750'
+    owner: root
+    group: root
+  loop:
+    - "{{ backup_local_dir }}"
+    - "{{ backup_local_dir }}/scripts"
+    - "{{ backup_local_dir }}/config"
+    - "{{ backup_local_dir }}/logs"
+    - "{{ backup_base_dir }}"
+    - "{{ backup_tmp_dir }}"
+    - "{{ backup_archive_dir }}"
+    - "{{ backup_base_dir }}/daily"
+    - "{{ backup_base_dir }}/weekly"
+    - "{{ backup_base_dir }}/monthly"
+    - "{{ backup_base_dir }}/logs"
+    - "{{ backup_base_dir }}/scripts"
+    - "{{ backup_base_dir }}/tmp"
+  when: backup_enabled | bool
+
+- name: Generate backup encryption key if needed
+  ansible.builtin.lineinfile:
+    path: "{{ mailu_base_dir }}/.env"
+    line: "{{ backup_encryption_key_var }}={{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}"
+    regexp: "^{{ backup_encryption_key_var }}="
+    state: present
+  when: 
+    - backup_enabled | bool
+    - backup_encryption_enabled | bool
+  no_log: true
+
+- name: Check if required packages are installed
+  ansible.builtin.apt:
+    name:
+      - gpg
+      - tar
+      - gzip
+      - cron
+      - rsync
+    state: present
+  when: backup_enabled | bool
+
+# Install cloud provider CLI tools based on enabled backends
+- name: Install AWS CLI if AWS S3 backend is enabled
+  ansible.builtin.apt:
+    name: awscli
+    state: present
+  when: 
+    - backup_enabled | bool
+    - backup_aws_enabled | bool
+
+- name: Install Azure CLI if Azure Blob Storage backend is enabled
+  ansible.builtin.apt:
+    name: azure-cli
+    state: present
+  when: 
+    - backup_enabled | bool
+    - backup_azure_enabled | bool
+
+- name: Install Google Cloud SDK if GCP Storage backend is enabled
+  ansible.builtin.block:
+    - name: Add Google Cloud SDK apt key
+      ansible.builtin.apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: Add Google Cloud SDK apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb https://packages.cloud.google.com/apt cloud-sdk main"
+        state: present
+        
+    - name: Install Google Cloud SDK
+      ansible.builtin.apt:
+        name: google-cloud-sdk
+        state: present
+        update_cache: yes
+  when: 
+    - backup_enabled | bool
+    - backup_gcp_enabled | bool
+
+# Copy backup scripts
+- name: Create backup script
+  ansible.builtin.template:
+    src: backup_script.sh.j2
+    dest: "{{ backup_base_dir }}/backup.sh"
+    mode: '0750'
+  when: backup_enabled | bool
+
+- name: Create restore script
+  ansible.builtin.template:
+    src: restore_script.sh.j2
+    dest: "{{ backup_base_dir }}/restore.sh"
+    mode: '0750'
+  when: backup_enabled | bool
+
+# Schedule backup jobs
+- name: Set up cron job for backups
+  ansible.builtin.cron:
+    name: "Mailu backup"
+    job: "{{ backup_base_dir }}/backup.sh > {{ backup_base_dir }}/backup.log 2>&1"
+    hour: "{{ backup_schedule_hour }}"
+    minute: "{{ backup_schedule_minute }}"
+    weekday: "{{ backup_schedule_weekday }}"
+    user: root
+    state: "{{ 'present' if backup_enabled and backup_schedule_enabled else 'absent' }}"
+
+# Include storage specific tasks
+- name: Configure rsync backup
+  ansible.builtin.include_tasks: storage/rsync.yml
+  when: 
+    - backup_enabled | bool
+    - backup_rsync_enabled | bool
+
+- name: Configure AWS S3 backup
+  ansible.builtin.include_tasks: storage/aws_s3.yml
+  when: 
+    - backup_enabled | bool
+    - backup_aws_enabled | bool
+
+- name: Configure Azure Blob Storage backup
+  ansible.builtin.include_tasks: storage/azure_blob.yml
+  when: 
+    - backup_enabled | bool
+    - backup_azure_enabled | bool
+
+- name: Configure Google Cloud Storage backup
+  ansible.builtin.include_tasks: storage/gcp_storage.yml
+  when: 
+    - backup_enabled | bool
+    - backup_gcp_enabled | bool
+
+- name: Install backup dependencies
+  ansible.builtin.apt:
+    name:
+      - rsync
+      - tar
+      - gzip
+      - bzip2
+      - xz-utils
+      - python3-pip
+      - cron
+      - gpg
+    state: present
+  become: true
+
+- name: Install Python dependencies for backup
+  ansible.builtin.pip:
+    name:
+      - boto3
+      - b2sdk
+      - paramiko
+    state: present
+  become: true
+  when: backup_strategy in ['s3', 'b2', 'sftp']
+
+- name: Include S3 backup configuration
+  ansible.builtin.include_tasks: s3_setup.yml
+  when: backup_strategy == "s3"
+
+- name: Include B2 backup configuration
+  ansible.builtin.include_tasks: b2_setup.yml
+  when: backup_strategy == "b2"
+
+- name: Include SFTP backup configuration
+  ansible.builtin.include_tasks: sftp_setup.yml
+  when: backup_strategy == "sftp"
+
+- name: Generate backup scripts
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ backup_base_dir }}/scripts/{{ item.dest }}"
+    mode: '0750'
+  loop:
+    - { src: 'backup_script.sh.j2', dest: 'backup.sh' }
+    - { src: 'restore_script.sh.j2', dest: 'restore.sh' }
+    - { src: 'cleanup_script.sh.j2', dest: 'cleanup.sh' }
+    - { src: 'notify_script.sh.j2', dest: 'notify.sh' }
+
+- name: Generate backup config file
+  ansible.builtin.template:
+    src: backup_config.yml.j2
+    dest: "{{ backup_base_dir }}/backup_config.yml"
+    mode: '0640'
+
+- name: Setup daily backup cron job
+  ansible.builtin.cron:
+    name: "Mailu daily backup"
+    job: "{{ backup_base_dir }}/scripts/backup.sh daily > {{ backup_base_dir }}/logs/daily-$(date +\\%Y\\%m\\%d).log 2>&1"
+    hour: "{{ backup_daily_hour }}"
+    minute: "{{ backup_daily_minute }}"
+    user: "{{ ansible_user }}"
+  when: backup_schedule_daily | bool
+
+- name: Setup weekly backup cron job
+  ansible.builtin.cron:
+    name: "Mailu weekly backup"
+    job: "{{ backup_base_dir }}/scripts/backup.sh weekly > {{ backup_base_dir }}/logs/weekly-$(date +\\%Y\\%m\\%d).log 2>&1"
+    weekday: "{{ backup_weekly_day }}"
+    hour: "{{ backup_weekly_hour }}"
+    minute: "{{ backup_weekly_minute }}"
+    user: "{{ ansible_user }}"
+  when: backup_schedule_weekly | bool
+
+- name: Setup monthly backup cron job
+  ansible.builtin.cron:
+    name: "Mailu monthly backup"
+    job: "{{ backup_base_dir }}/scripts/backup.sh monthly > {{ backup_base_dir }}/logs/monthly-$(date +\\%Y\\%m\\%d).log 2>&1"
+    day: "{{ backup_monthly_day }}"
+    hour: "{{ backup_monthly_hour }}"
+    minute: "{{ backup_monthly_minute }}"
+    user: "{{ ansible_user }}"
+  when: backup_schedule_monthly | bool
+
+- name: Setup backup cleanup cron job
+  ansible.builtin.cron:
+    name: "Mailu backup cleanup"
+    job: "{{ backup_base_dir }}/scripts/cleanup.sh > {{ backup_base_dir }}/logs/cleanup-$(date +\\%Y\\%m\\%d).log 2>&1"
+    hour: "{{ backup_daily_hour + 1 }}"
+    minute: "{{ backup_daily_minute }}"
+    user: "{{ ansible_user }}"
+
+- name: Create a backup immediately if requested
+  ansible.builtin.command:
+    cmd: "{{ backup_base_dir }}/scripts/backup.sh manual"
+    creates: "{{ backup_base_dir }}/manual-backup-initial.flag"
+  register: backup_result
+  changed_when: backup_result.rc == 0
+  failed_when: false
+  when: backup_run_immediately | default(false) | bool
+
+- name: Create initial backup flag file
+  ansible.builtin.file:
+    path: "{{ backup_base_dir }}/manual-backup-initial.flag"
+    state: touch
+    mode: '0640'
+  when: backup_run_immediately | default(false) | bool and backup_result.rc == 0
+
+- name: Display backup configuration information
+  ansible.builtin.debug:
+    msg:
+      - "Backup configuration complete."
+      - "Backup storage strategy: {{ backup_strategy }}"
+      - "Daily backups at {{ backup_daily_hour }}:{{ backup_daily_minute | format_time }}, retention: {{ backup_daily_retention }} days"
+      - "Weekly backups on {{ ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][backup_weekly_day] }} at {{ backup_weekly_hour }}:{{ backup_weekly_minute | format_time }}, retention: {{ backup_weekly_retention }} weeks"
+      - "Monthly backups on day {{ backup_monthly_day }} at {{ backup_monthly_hour }}:{{ backup_monthly_minute | format_time }}, retention: {{ backup_monthly_retention }} months"
+      - "To manually trigger a backup: {{ backup_base_dir }}/scripts/backup.sh [daily|weekly|monthly|manual]"
+      - "To restore from backup: {{ backup_base_dir }}/scripts/restore.sh [backup_filename]"
+
+- name: Install required packages for backups
+  ansible.builtin.package:
+    name:
+      - "rsync"
+      - "gzip"
+      - "python3-pip"
+    state: present
+
+- name: Install required Python packages for S3 backups
+  ansible.builtin.pip:
+    name:
+      - "boto3"
+      - "awscli"
+    state: present
+  when: backup_s3_enabled | bool
+
+- name: Include S3 backup setup
+  ansible.builtin.include_tasks: s3_setup.yml
+  when: backup_s3_enabled | bool
+
+- name: Generate backup script
+  ansible.builtin.template:
+    src: backup_script.sh.j2
+    dest: "{{ backup_local_dir }}/scripts/backup.sh"
+    mode: '0750'
+    owner: root
+    group: root
+
+- name: Generate restore script
+  ansible.builtin.template:
+    src: restore_script.sh.j2
+    dest: "{{ backup_local_dir }}/scripts/restore.sh"
+    mode: '0750'
+    owner: root
+    group: root
+
+- name: Set up backup cron job
+  ansible.builtin.cron:
+    name: "Mailu backup"
+    job: "{{ backup_local_dir }}/scripts/backup.sh > {{ backup_local_dir }}/logs/backup_$(date +\\%Y\\%m\\%d).log 2>&1"
+    hour: "{{ backup_cron_hour }}"
+    minute: "{{ backup_cron_minute }}"
+    state: present
+  when: backup_cron_enabled | bool
+
+- name: Set up backup rotation cron job
+  ansible.builtin.cron:
+    name: "Rotate backup logs"
+    job: "find {{ backup_local_dir }}/logs -name 'backup_*.log' -type f -mtime +{{ backup_log_retention_days }} -delete"
+    hour: "{{ backup_cron_hour }}"
+    minute: "{{ backup_cron_minute | int + 30 }}"
+    state: present
+  when: backup_cron_enabled | bool

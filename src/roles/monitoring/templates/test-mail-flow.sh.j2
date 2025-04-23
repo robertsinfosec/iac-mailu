@@ -1,0 +1,112 @@
+#!/bin/bash
+# Mail flow test for Mailu
+# This script tests email delivery by sending test emails and checking if they arrive
+
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+TEST_ID=$(date +"%Y%m%d%H%M%S")
+MAIL_FROM="monitoring@{{ primary_domain }}"
+MAIL_TO="test-mailflow@{{ primary_domain }}"
+LOGFILE="{{ monitoring_base_dir }}/mail-flow-test.log"
+METRICS_DIR="{{ monitoring_base_dir }}/metrics"
+METRICS_FILE="${METRICS_DIR}/mail_flow_metrics.prom"
+TIMEOUT=300  # 5 minutes timeout for mail delivery
+
+# Create metrics directory if it doesn't exist
+mkdir -p "${METRICS_DIR}"
+
+# Function to log messages
+log() {
+    echo "[${TIMESTAMP}] $1" | tee -a "${LOGFILE}"
+}
+
+# Start timer
+START_TIME=$(date +%s)
+
+# Create test message
+TEST_SUBJECT="Mail Flow Test ${TEST_ID}"
+TEST_BODY="This is an automated test message to verify mail flow.
+Timestamp: ${TIMESTAMP}
+Test ID: ${TEST_ID}
+
+This test checks that mail delivery is working properly."
+
+# Send the test email
+log "Sending test email with ID: ${TEST_ID}"
+echo "${TEST_BODY}" | mail -s "${TEST_SUBJECT}" -r "${MAIL_FROM}" "${MAIL_TO}"
+SEND_STATUS=$?
+
+# Check if send was successful
+if [[ ${SEND_STATUS} -ne 0 ]]; then
+    log "ERROR: Failed to send test email (exit code: ${SEND_STATUS})"
+    echo "mail_flow_send_success 0" > "${METRICS_FILE}"
+    exit 1
+fi
+
+log "Test email sent successfully, waiting for delivery..."
+echo "mail_flow_send_success 1" > "${METRICS_FILE}"
+
+# Now we wait for the mail to be delivered and check inbox
+DELIVERED=0
+ELAPSED=0
+DELIVERY_TIME=0
+
+while [[ ${DELIVERED} -eq 0 ]] && [[ ${ELAPSED} -lt ${TIMEOUT} ]]; do
+    # Sleep for 5 seconds between checks
+    sleep 5
+    ELAPSED=$(($(date +%s) - START_TIME))
+    
+    # Check for the delivered mail with test ID in the subject
+    # This assumes the monitoring user can read the mailbox of the test user
+    MAIL_CHECK=$(docker exec -t {{ mailu_base_dir }}/imap doveadm search -u "${MAIL_TO}" SUBJECT "${TEST_ID}" 2>/dev/null)
+    
+    if [[ $? -eq 0 ]] && [[ -n "${MAIL_CHECK}" ]]; then
+        DELIVERED=1
+        DELIVERY_TIME=${ELAPSED}
+        log "Test email delivered successfully after ${DELIVERY_TIME} seconds"
+        break
+    fi
+    
+    log "Waiting for delivery... (${ELAPSED}/${TIMEOUT} seconds elapsed)"
+done
+
+# Record results as Prometheus metrics
+if [[ ${DELIVERED} -eq 1 ]]; then
+    cat > "${METRICS_FILE}" <<EOF
+mail_flow_success 1
+mail_flow_delivery_time ${DELIVERY_TIME}
+mail_flow_timestamp $(date +%s)
+EOF
+else
+    log "ERROR: Test email not delivered within timeout (${TIMEOUT} seconds)"
+    cat > "${METRICS_FILE}" <<EOF
+mail_flow_success 0
+mail_flow_delivery_time -1
+mail_flow_timestamp $(date +%s)
+EOF
+    exit 1
+fi
+
+# Send a webhook notification if mail delivery is confirmed
+{% if alertmanager_ntfy_enabled %}
+if [[ ${DELIVERED} -eq 1 ]]; then
+    curl -H "Title: Mail Flow Test Successful" \
+         -H "Priority: low" \
+         -H "Tags: white_check_mark" \
+         {% if vault_ntfy_auth_token is defined %}
+         -H "Authorization: Bearer {{ vault_ntfy_auth_token | default('') }}" \
+         {% endif %}
+         -d "Mail flow test completed successfully. Delivery time: ${DELIVERY_TIME} seconds" \
+         "{{ ntfy_url | default('') }}/{{ ntfy_topic | default('status') }}"
+else
+    curl -H "Title: Mail Flow Test FAILED" \
+         -H "Priority: high" \
+         -H "Tags: warning" \
+         {% if vault_ntfy_auth_token is defined %}
+         -H "Authorization: Bearer {{ vault_ntfy_auth_token | default('') }}" \
+         {% endif %}
+         -d "Mail flow test FAILED. Email not delivered within ${TIMEOUT} seconds." \
+         "{{ ntfy_url | default('') }}/{{ ntfy_topic | default('alerts') }}"
+fi
+{% endif %}
+
+exit $((1 - DELIVERED))

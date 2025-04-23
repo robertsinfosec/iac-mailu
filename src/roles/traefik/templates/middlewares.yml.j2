@@ -1,0 +1,28 @@
+---
+# Dynamic configuration for Traefik middlewares
+
+http:
+  middlewares:
+    # Security headers middleware
+    security-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: true
+        sslRedirect: true
+        {% if traefik_hsts_enabled %}
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: {{ traefik_hsts_max_age }}
+        {% endif %}
+        customBrowserXSSValue: "1; mode=block"
+
+    # GZIP compression middleware
+    gzip:
+      compress: {}
+
+    # Redirect HTTP to HTTPS middleware
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true

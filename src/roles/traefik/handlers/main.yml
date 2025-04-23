@@ -1,0 +1,8 @@
+---
+# Traefik role handlers
+
+- name: restart traefik
+  community.docker.docker_container:
+    name: traefik
+    restart: yes
+  listen: "restart traefik"

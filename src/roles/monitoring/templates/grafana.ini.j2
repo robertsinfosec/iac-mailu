@@ -1,0 +1,28 @@
+[server]
+http_port = 3000
+domain = {{ grafana_domain | default('localhost') }}
+root_url = {{ 'https://' + grafana_domain if monitoring_expose_ui and grafana_domain is defined else '' }}
+
+[paths]
+data = /var/lib/grafana
+logs = /var/log/grafana
+
+[security]
+admin_user = {{ grafana_admin_user }}
+admin_password = {{ lookup('vars', grafana_admin_password_var) | default('admin') }}
+
+[auth.anonymous]
+enabled = {{ grafana_anonymous_enabled | lower }}
+org_role = Viewer
+
+[smtp]
+enabled = {{ grafana_smtp_enabled | lower }}
+host = {{ grafana_smtp_host }}
+from_address = {{ grafana_smtp_from_address }}
+from_name = {{ grafana_smtp_from_name }}
+
+[unified_alerting]
+enabled = true
+
+[alerting]
+enabled = false

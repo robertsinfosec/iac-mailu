@@ -1,0 +1,60 @@
+server:
+  http_listen_port: {{ promtail_port }}
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # System logs
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: varlogs
+          __path__: /var/log/{syslog,messages,auth.log,mail.log,mail.err}
+          host: {{ inventory_hostname }}
+
+  # Mailu logs
+  - job_name: mailu
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: mailulogs
+          host: {{ inventory_hostname }}
+          __path__: /mailu/log/*.log
+
+  # Postfix mail queue logs
+  - job_name: postfix_queue
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: postfixqueue
+          host: {{ inventory_hostname }}
+          __path__: /var/log/mail.*
+
+  # Security logs
+  - job_name: security
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: security
+          host: {{ inventory_hostname }}
+          __path__: /var/log/auth.log
+
+  # SMTP & Dovecot logs
+  - job_name: mail_protocols
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: mailprotocols
+          host: {{ inventory_hostname }}
+          __path__: /var/log/{mail.log,dovecot.log}

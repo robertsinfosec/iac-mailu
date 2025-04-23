@@ -1,0 +1,42 @@
+---
+- name: Deploy and Configure Mailu Multi-Domain Server
+  hosts: mail_server
+  become: true
+  vars_files:
+    - ../vault/secrets.yml # Load vaulted secrets
+
+  pre_tasks:
+    - name: Ensure necessary packages are installed (Docker, Python libs, etc.)
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+          - python3-docker # Required for docker_compose module
+          - acl # Required for setting permissions on vault files potentially
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker SDK for Python is installed
+      ansible.builtin.pip:
+        name: docker
+        state: present
+
+    - name: Ensure Docker Compose is installed (using pip)
+      ansible.builtin.pip:
+        name: docker-compose
+        state: present
+
+    - name: Start and enable Docker service
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+  roles:
+    - role: mailu # This role will contain the core Mailu/Traefik/DNS logic
+    - role: mail_security # Implement email security and deliverability features
+    - role: backup # Setup backup and recovery capabilities
+    - role: monitoring # Setup comprehensive monitoring, alerting, and observability

@@ -1,0 +1,43 @@
+---
+# Standalone playbook for backing up Mailu
+
+- name: Backup Mailu Server
+  hosts: mail_server
+  become: true
+  vars_files:
+    - ../vault/secrets.yml # Load vaulted secrets
+
+  tasks:
+    - name: Include all variables for configuration
+      ansible.builtin.include_vars:
+        file: ../group_vars/all.yml
+    
+    - name: Find domain configuration files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../domains"
+        patterns: '*.yml'
+        recurse: no
+      register: domain_files
+    
+    - name: Load variables from each domain file
+      ansible.builtin.include_vars:
+        file: "{{ item.path }}"
+        name: domain_config
+      loop: "{{ domain_files.files }}"
+      loop_control:
+        loop_var: item
+      register: loaded_domains
+    
+    - name: Set primary domain fact (first domain found)
+      ansible.builtin.set_fact:
+        primary_domain: "{{ loaded_domains.results[0].ansible_facts.domain_config.domain }}"
+      when: loaded_domains.results | length > 0
+    
+    - name: Execute backup script
+      ansible.builtin.shell: "{{ mailu_base_dir }}/backups/backup.sh"
+      register: backup_result
+      changed_when: true
+      
+    - name: Display backup results
+      ansible.builtin.debug:
+        msg: "{{ backup_result.stdout_lines }}"

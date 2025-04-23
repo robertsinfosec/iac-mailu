@@ -1,0 +1,30 @@
+---
+# Common variables for all hosts
+
+# Base directory for Mailu configuration and data on the target host
+mailu_base_dir: /opt/mailu
+
+# Traefik configuration
+traefik_network_name: traefik_proxy
+traefik_config_dir: "{{ mailu_base_dir }}/traefik"
+
+# Cloudflare API credentials (will be loaded from vault)
+# cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
+
+# Default DMARC policy
+default_dmarc_policy: "v=DMARC1; p=none; rua=mailto:postmaster@{{ domain }}" # Default, can be overridden per domain
+
+# CrowdSec settings
+crowdsec_enabled: true
+
+# Health checks and monitoring
+health_check_enabled: true
+health_check_interval: 5m # Format for cron job
+
+# Ntfy notification settings
+ntfy_enabled: false # Set to true to enable notifications
+ntfy_url: https://ntfy.sh # Change to your self-hosted instance if needed
+ntfy_topic: "mailu-alerts" # Topic name to use for notifications
+ntfy_send_success: false # Whether to send notifications on successful health checks
+# ntfy_auth_token: "{{ vault_ntfy_auth_token }}" # Optional auth token if your ntfy instance requires authentication
+mailu_debug: false # Set to true for verbose debugging output

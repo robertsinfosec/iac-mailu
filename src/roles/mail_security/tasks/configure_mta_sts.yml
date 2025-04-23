@@ -1,0 +1,50 @@
+---
+# Tasks for configuring MTA-STS for secure mail transport
+
+- name: Create MTA-STS directories
+  ansible.builtin.file:
+    path: "{{ mailu_base_dir }}/mta-sts/{{ domain }}/.well-known/mta-sts"
+    state: directory
+    mode: '0755'
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain: "{{ domain_item.ansible_facts.domain_config.domain }}"
+
+# Create MTA-STS policy file
+- name: Create MTA-STS policy file for each domain
+  ansible.builtin.template:
+    src: mta-sts.txt.j2
+    dest: "{{ mailu_base_dir }}/mta-sts/{{ domain }}/.well-known/mta-sts/mta-sts.txt"
+    mode: '0644'
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain: "{{ domain_item.ansible_facts.domain_config.domain }}"
+
+# Add MTA-STS subdomain to Traefik configuration
+- name: Create Traefik configuration for MTA-STS
+  ansible.builtin.template:
+    src: traefik_mta_sts.yml.j2
+    dest: "{{ traefik_config_dir }}/mta-sts.yml"
+    mode: '0644'
+  notify: Restart Traefik container
+
+# Document MTA-STS setup requirements
+- name: Create MTA-STS setup documentation
+  ansible.builtin.template:
+    src: mta_sts_setup.md.j2
+    dest: "{{ mailu_base_dir }}/docs/mta_sts_setup.md"
+    mode: '0644'
+  
+# Display MTA-STS configuration information
+- name: Display MTA-STS configuration information
+  ansible.builtin.debug:
+    msg: >
+      MTA-STS has been configured.
+      For each domain, make sure to:
+      1. Set up the _mta-sts DNS record as shown in the DNS recommendations
+      2. Configure mta-sts.{{ domain }} to point to this server
+      3. Ensure TLS certificates are properly set up for each domain

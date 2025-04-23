@@ -1,0 +1,24 @@
+---
+# Traefik dashboard configuration
+
+http:
+  routers:
+    dashboard:
+      rule: "Host(`{{ traefik_dashboard_host }}`)"
+      service: "api@internal"
+      entryPoints:
+        - "websecure"
+      tls:
+        certResolver: "{{ traefik_default_cert_resolver }}"
+      middlewares:
+        - "security-headers@file"
+        {% if traefik_dashboard_auth_enabled %}
+        - "dashboard-auth@file"
+        {% endif %}
+
+  middlewares:
+    {% if traefik_dashboard_auth_enabled %}
+    dashboard-auth:
+      basicAuth:
+        usersFile: "/etc/traefik/dashboard_users.htpasswd"
+    {% endif %}

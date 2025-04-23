@@ -1,0 +1,59 @@
+---
+# Standalone playbook for restoring Mailu from backup
+
+- name: Restore Mailu Server
+  hosts: mail_server
+  become: true
+  vars_files:
+    - ../vault/secrets.yml # Load vaulted secrets
+
+  vars:
+    backup_file: "{{ backup_file | default('latest') }}"
+    restore_config: "{{ restore_config | default(true) }}"
+    restore_mail_data: "{{ restore_mail_data | default(true) }}"
+    restore_dkim: "{{ restore_dkim | default(true) }}"
+    force_restore: "{{ force_restore | default(false) }}"
+  
+  tasks:
+    - name: Include all variables for configuration
+      ansible.builtin.include_vars:
+        file: ../group_vars/all.yml
+    
+    - name: Confirm restore operation
+      ansible.builtin.pause:
+        prompt: |
+          WARNING: This will restore Mailu from backup and may OVERWRITE existing data!
+          Backup file: {{ backup_file }}
+          Restore configuration: {{ restore_config }}
+          Restore mail data: {{ restore_mail_data }}
+          Restore DKIM keys: {{ restore_dkim }}
+          
+          Press ENTER to continue or Ctrl+C to abort
+      when: not force_restore | bool
+    
+    # Build restore command with appropriate flags
+    - name: Set restore command flags
+      ansible.builtin.set_fact:
+        restore_flags: >-
+          {{ '--config-only' if restore_config | bool and not restore_mail_data | bool and not restore_dkim | bool else
+             '--data-only' if not restore_config | bool and restore_mail_data | bool and not restore_dkim | bool else
+             '--dkim-only' if not restore_config | bool and not restore_mail_data | bool and restore_dkim | bool else '' }}
+          {{ '--force' if force_restore | bool else '' }}
+    
+    - name: Execute restore script
+      ansible.builtin.shell: "{{ mailu_base_dir }}/backups/restore.sh {{ restore_flags }} {{ backup_file }}"
+      register: restore_result
+      changed_when: true
+      
+    - name: Display restore results
+      ansible.builtin.debug:
+        msg: "{{ restore_result.stdout_lines }}"
+        
+    - name: Verify Mailu services after restore
+      ansible.builtin.shell: "cd {{ mailu_base_dir }} && docker-compose ps"
+      register: verify_result
+      changed_when: false
+      
+    - name: Display service status
+      ansible.builtin.debug:
+        msg: "{{ verify_result.stdout_lines }}"

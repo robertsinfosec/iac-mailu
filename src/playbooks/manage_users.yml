@@ -1,0 +1,103 @@
+---
+- name: Manage Mailu Users
+  hosts: mail_server
+  become: true
+  vars_files:
+    - ../vault/secrets.yml
+  
+  vars:
+    action: "list"    # Default action: list, add, remove, update, password, bulk_add
+    username: ""      # User to operate on (user@domain.com)
+    password: ""      # Password for the user (when adding/updating)
+    user_file: ""     # Path to user config file (for bulk operations)
+    display_name: ""  # Display name for the user
+    
+  tasks:
+    - name: List users for all domains
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu user_list
+      register: user_list
+      changed_when: false
+      when: action == "list"
+    
+    - name: Display user list
+      ansible.builtin.debug:
+        msg: "{{ user_list.stdout_lines }}"
+      when: action == "list"
+    
+    - name: Add new user
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu user add {{ username }} {% if display_name != "" %}'{{ display_name }}'{% else %}''{% endif %} {{ password }}
+      register: user_add_result
+      when: action == "add" and username != "" and password != ""
+      changed_when: user_add_result.rc == 0
+      no_log: true  # Hide password from logs
+    
+    - name: Update user password
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu user password {{ username }} {{ password }}
+      register: user_pw_result
+      when: action == "password" and username != "" and password != ""
+      changed_when: user_pw_result.rc == 0
+      no_log: true  # Hide password from logs
+    
+    - name: Remove user
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu user remove {{ username }}
+      register: user_rm_result
+      when: action == "remove" and username != ""
+      changed_when: user_rm_result.rc == 0
+    
+    - name: Load user configuration file
+      include_vars:
+        file: "{{ user_file }}"
+        name: users_config
+      when: action == "bulk_add" and user_file != ""
+    
+    - name: Bulk add users from configuration
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu user add {{ user_item.email }} '{{ user_item.display_name | default("") }}' {{ user_item.password }}
+      loop: "{{ users_config.users }}"
+      loop_control:
+        loop_var: user_item
+        label: "{{ user_item.email }}"
+      register: bulk_add_result
+      when: action == "bulk_add" and users_config.users is defined
+      changed_when: true
+      no_log: true  # Hide passwords from logs
+    
+    - name: Add aliases for users
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu alias add {{ alias_item }} {{ user_item.email }}
+      loop: "{{ user_item.aliases | default([]) }}"
+      loop_control:
+        loop_var: alias_item
+      when: >
+        (action == "add" and user_item.aliases is defined) or 
+        (action == "bulk_add" and users_config.users is defined)
+      changed_when: true
+
+    - name: Display operation results
+      ansible.builtin.debug:
+        msg: "{{ operation_result }}"
+      vars:
+        operation_result: >-
+          {% if action == 'add' and user_add_result.rc == 0 %}
+          User {{ username }} has been added successfully.
+          {% elif action == 'password' and user_pw_result.rc == 0 %}
+          Password for {{ username }} has been updated successfully.
+          {% elif action == 'remove' and user_rm_result.rc == 0 %}
+          User {{ username }} has been removed successfully.
+          {% elif action == 'bulk_add' %}
+          Bulk user addition completed.
+          {% elif action == 'list' %}
+          Listed all users.
+          {% else %}
+          No changes made or operation failed.
+          {% endif %}

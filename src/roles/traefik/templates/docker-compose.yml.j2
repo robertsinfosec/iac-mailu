@@ -1,0 +1,49 @@
+version: '3'
+
+services:
+  traefik:
+    image: traefik:{{ traefik_version }}
+    container_name: {{ traefik_container_name }}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      # HTTP
+      - {{ traefik_http_port }}:{{ traefik_http_port }}
+      # HTTPS
+      - {{ traefik_https_port }}:{{ traefik_https_port }}
+      # Mail ports
+      - 25:25
+      - 143:143
+      - 587:587
+      - 993:993
+      - 465:465
+      - 110:110
+      - 995:995
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - {{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro
+      - {{ traefik_dynamic_config_dir }}:/etc/traefik/dynamic:ro
+      - {{ traefik_acme_dir }}:/acme
+      - /var/log/traefik:/var/log/traefik
+    networks:
+      - {{ traefik_network_name }}
+    labels:
+      - "traefik.enable=true"
+      {% if traefik_dashboard_enabled %}
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`{{ traefik_dashboard_host }}`)"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.traefik-dashboard.tls.certresolver={{ traefik_default_cert_resolver }}"
+      {% if traefik_dashboard_auth_enabled %}
+      - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth"
+      - "traefik.http.middlewares.traefik-auth.basicauth.usersfile=/etc/traefik/dashboard_users.htpasswd"
+      {% endif %}
+      {% endif %}
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Content-Type-Options=nosniff"
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-XSS-Protection=1; mode=block"
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Frame-Options=SAMEORIGIN"
+
+networks:
+  {{ traefik_network_name }}:
+    external: true

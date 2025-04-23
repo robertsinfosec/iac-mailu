@@ -1,0 +1,116 @@
+---
+# Tasks for integrating CrowdSec with Mailu
+
+- name: Check if CrowdSec is already installed
+  ansible.builtin.command: which cscli
+  register: crowdsec_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install CrowdSec prerequisites
+  ansible.builtin.apt:
+    name:
+      - curl
+      - apt-transport-https
+      - gnupg2
+    state: present
+  when: crowdsec_security_enabled | default(true) and crowdsec_check.rc != 0
+
+- name: Add CrowdSec GPG key
+  ansible.builtin.apt_key:
+    url: https://packagecloud.io/crowdsec/crowdsec/gpgkey
+    state: present
+  when: crowdsec_security_enabled | default(true) and crowdsec_check.rc != 0
+
+- name: Add CrowdSec repository
+  ansible.builtin.apt_repository:
+    repo: "deb https://packagecloud.io/crowdsec/crowdsec/{{ ansible_distribution | lower }}/ {{ ansible_distribution_release }} main"
+    state: present
+    filename: crowdsec
+  when: crowdsec_security_enabled | default(true) and crowdsec_check.rc != 0
+
+- name: Install CrowdSec and CrowdSec bouncer
+  ansible.builtin.apt:
+    name:
+      - crowdsec
+      - crowdsec-firewall-bouncer-iptables
+    state: present
+    update_cache: yes
+  when: crowdsec_security_enabled | default(true) and crowdsec_check.rc != 0
+  register: crowdsec_install
+
+- name: Create CrowdSec configuration directory
+  ansible.builtin.file:
+    path: "{{ mailu_base_dir }}/crowdsec"
+    state: directory
+    mode: '0755'
+  when: crowdsec_security_enabled | default(true)
+
+- name: Configure CrowdSec for Mailu logs
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: '0644'
+  loop:
+    - { src: "crowdsec_acquis.yaml.j2", dest: "/etc/crowdsec/acquis.d/mailu.yaml" }
+    - { src: "crowdsec_collections.yaml.j2", dest: "{{ mailu_base_dir }}/crowdsec/collections.yaml" }
+  when: crowdsec_security_enabled | default(true)
+  register: crowdsec_config
+
+- name: Install CrowdSec collections for mail protection
+  ansible.builtin.command: >
+    cscli collections install {{ item }}
+  loop:
+    - crowdsecurity/postfix
+    - crowdsecurity/dovecot
+    - crowdsecurity/nginx
+    - crowdsecurity/linux
+  register: cs_collections
+  changed_when: "'not up-to-date' in cs_collections.stdout or 'successfully installed' in cs_collections.stdout"
+  when: crowdsec_security_enabled | default(true)
+  
+- name: Register local API credentials
+  ansible.builtin.command: cscli machines add mailu-bouncer --auto
+  register: crowdsec_machine_reg
+  when: 
+    - crowdsec_security_enabled | default(true)
+    - crowdsec_install.changed or not crowdsec_check.rc == 0
+  changed_when: crowdsec_machine_reg.rc == 0
+  no_log: true
+
+- name: Configure bouncer
+  ansible.builtin.command: >
+    cscli bouncers add mailu-bouncer
+  register: bouncer_add
+  when: 
+    - crowdsec_security_enabled | default(true)
+    - crowdsec_install.changed or not crowdsec_check.rc == 0
+  changed_when: bouncer_add.rc == 0
+  failed_when: bouncer_add.rc != 0 and 'exists' not in bouncer_add.stderr
+  no_log: true
+
+- name: Restart CrowdSec service
+  ansible.builtin.systemd:
+    name: crowdsec
+    state: restarted
+    enabled: yes
+  when: crowdsec_security_enabled | default(true) and (crowdsec_config.changed or crowdsec_install.changed)
+
+- name: Restart CrowdSec firewall bouncer
+  ansible.builtin.systemd:
+    name: crowdsec-firewall-bouncer
+    state: restarted
+    enabled: yes
+  when: crowdsec_security_enabled | default(true) and (crowdsec_config.changed or crowdsec_install.changed or bouncer_add.changed)
+
+- name: Check CrowdSec status
+  ansible.builtin.command: cscli status
+  register: crowdsec_status
+  changed_when: false
+  when: crowdsec_security_enabled | default(true)
+
+- name: Display CrowdSec status
+  ansible.builtin.debug:
+    var: crowdsec_status.stdout_lines
+  when: crowdsec_security_enabled | default(true) and crowdsec_status.rc == 0

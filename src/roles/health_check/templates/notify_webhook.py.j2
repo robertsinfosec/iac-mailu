@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""
+Webhook Notification Module for Mailu Health Check
+"""
+
+import requests
+import json
+import socket
+from datetime import datetime
+
+class Notifier:
+    def __init__(self):
+        self.webhook_url = "{{ health_check_webhook_url }}"
+        self.webhook_method = "{{ health_check_webhook_method }}"
+        self.hostname = "{{ ansible_hostname }}"
+        
+    def send(self, subject, message):
+        """Send a notification via webhook."""
+        try:
+            # Prepare payload
+            payload = {
+                "timestamp": datetime.now().isoformat(),
+                "hostname": self.hostname,
+                "subject": subject,
+                "message": message,
+                "status": "unhealthy" if "Alert" in subject else "healthy"
+            }
+            
+            # Send webhook request
+            if self.webhook_method.upper() == "POST":
+                response = requests.post(
+                    self.webhook_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+            elif self.webhook_method.upper() == "GET":
+                response = requests.get(
+                    self.webhook_url,
+                    params=payload
+                )
+            else:
+                print(f"Unsupported webhook method: {self.webhook_method}")
+                return False
+                
+            # Check response
+            if response.status_code >= 200 and response.status_code < 300:
+                return True
+            else:
+                print(f"Webhook returned error status code: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"Failed to send webhook notification: {str(e)}")
+            return False

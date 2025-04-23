@@ -1,0 +1,85 @@
+---
+# Traefik role main tasks
+
+- name: Ensure Traefik configuration directory exists
+  ansible.builtin.file:
+    path: "{{ traefik_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Ensure Traefik data directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ traefik_config_dir }}/dynamic"
+    - "{{ traefik_config_dir }}/acme"
+    - "{{ traefik_config_dir }}/logs"
+
+# Generate Traefik configuration files
+- name: Generate Traefik static configuration (traefik.yml)
+  ansible.builtin.template:
+    src: "traefik.yml.j2"
+    dest: "{{ traefik_config_dir }}/traefik.yml"
+    mode: '0644'
+  notify: "restart traefik"
+
+- name: Generate Traefik dynamic base configuration
+  ansible.builtin.template:
+    src: "traefik_dynamic.yml.j2"
+    dest: "{{ traefik_config_dir }}/dynamic/base.yml"
+    mode: '0644'
+  notify: "restart traefik"
+
+- name: Generate Traefik domain-specific configuration
+  ansible.builtin.template:
+    src: "traefik_dynamic_domains.yml.j2"
+    dest: "{{ traefik_config_dir }}/dynamic/domains.yml"
+    mode: '0644'
+  vars:
+    loaded_domains: "{{ loaded_domains | default({}) }}"
+  notify: "restart traefik"
+
+# Ensure Docker network exists
+- name: Ensure Traefik Docker network exists
+  community.docker.docker_network:
+    name: "{{ traefik_network_name }}"
+    state: present
+
+# Pull Traefik Docker image
+- name: Pull Traefik Docker image
+  community.docker.docker_image:
+    name: "{{ traefik_image }}:{{ traefik_version }}"
+    source: pull
+    force_source: yes
+  when: traefik_pull_image | bool
+
+# Start Traefik container
+- name: Start Traefik container
+  community.docker.docker_container:
+    name: traefik
+    image: "{{ traefik_image }}:{{ traefik_version }}"
+    restart_policy: unless-stopped
+    networks:
+      - name: "{{ traefik_network_name }}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "{{ traefik_config_dir }}/dynamic:/etc/traefik/dynamic:ro"
+      - "{{ traefik_config_dir }}/acme:/acme"
+      - "{{ traefik_config_dir }}/logs:/logs"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.traefik-dashboard.rule: "Host(`{{ traefik_dashboard_host }}`)"
+      traefik.http.routers.traefik-dashboard.entrypoints: "websecure"
+      traefik.http.routers.traefik-dashboard.tls: "true"
+      traefik.http.routers.traefik-dashboard.service: "api@internal"
+      traefik.http.routers.traefik-dashboard.middlewares: "traefik-auth"
+      traefik.http.middlewares.traefik-auth.basicauth.users: "{{ traefik_dashboard_username }}:{{ traefik_dashboard_hashed_password }}"
+    state: started
+  register: traefik_container
+  when: traefik_enabled | bool

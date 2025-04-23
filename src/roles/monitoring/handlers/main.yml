@@ -1,0 +1,78 @@
+---
+# Handlers for monitoring role
+
+- name: Restart monitoring stack
+  community.docker.docker_compose:
+    project_src: "{{ monitoring_base_dir }}"
+    restarted: true
+  listen: Restart monitoring stack
+
+- name: Restart prometheus
+  community.docker.docker_compose:
+    project_src: "{{ monitoring_base_dir }}"
+    services:
+      - prometheus
+    restarted: true
+  listen: Restart prometheus
+
+- name: Restart alertmanager
+  community.docker.docker_compose:
+    project_src: "{{ monitoring_base_dir }}"
+    services:
+      - alertmanager
+    restarted: true
+  listen: Restart alertmanager
+
+- name: Restart grafana
+  community.docker.docker_compose:
+    project_src: "{{ monitoring_base_dir }}"
+    services:
+      - grafana
+    restarted: true
+  listen: Restart grafana
+
+- name: Restart loki
+  community.docker.docker_compose:
+    project_src: "{{ monitoring_base_dir }}"
+    services:
+      - loki
+    restarted: true
+  listen: Restart loki
+
+- name: Restart promtail
+  community.docker.docker_compose:
+    project_src: "{{ monitoring_base_dir }}"
+    services:
+      - promtail
+    restarted: true
+  listen: Restart promtail
+
+- name: Restart node-exporter
+  community.docker.docker_compose:
+    project_src: "{{ monitoring_base_dir }}"
+    services:
+      - node-exporter
+    restarted: true
+  listen: Restart node-exporter
+
+- name: Restart blackbox-exporter
+  community.docker.docker_compose:
+    project_src: "{{ monitoring_base_dir }}"
+    services:
+      - blackbox-exporter
+    restarted: true
+  listen: Restart blackbox-exporter
+
+- name: Restart Traefik container
+  community.docker.docker_compose:
+    project_src: "{{ mailu_base_dir }}"
+    services:
+      - front
+    restarted: true
+  listen: Restart Traefik container
+
+- name: Restart Mailu stack
+  community.docker.docker_compose:
+    project_src: "{{ mailu_base_dir }}"
+    restarted: true
+  listen: Restart Mailu stack

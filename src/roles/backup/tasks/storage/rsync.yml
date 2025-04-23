@@ -1,0 +1,61 @@
+---
+# Configure rsync for backups
+
+- name: Ensure rsync is installed
+  ansible.builtin.apt:
+    name: rsync
+    state: present
+  when: backup_rsync_enabled | bool
+
+- name: Create SSH key for rsync backup if it doesn't exist
+  ansible.builtin.user:
+    name: root
+    generate_ssh_key: yes
+    ssh_key_type: ed25519
+    ssh_key_bits: 4096
+    ssh_key_file: "{{ backup_rsync_ssh_key | default('~/.ssh/id_ed25519') }}"
+  when: 
+    - backup_rsync_enabled | bool
+    - backup_rsync_ssh_key is defined
+
+- name: Display public key for manual setup on remote backup server
+  ansible.builtin.command: "cat {{ backup_rsync_ssh_key | default('~/.ssh/id_ed25519') }}.pub"
+  register: ssh_pubkey
+  changed_when: false
+  when: backup_rsync_enabled | bool
+
+- name: Show public key information
+  ansible.builtin.debug:
+    msg: |
+      To enable passwordless rsync backups, add this public key to authorized_keys on {{ backup_rsync_host }}:
+      {{ ssh_pubkey.stdout }}
+  when:
+    - backup_rsync_enabled | bool
+    - ssh_pubkey.stdout is defined
+
+- name: Add remote host to known_hosts if not already present
+  ansible.builtin.known_hosts:
+    name: "{{ backup_rsync_host }}"
+    state: present
+  when: backup_rsync_enabled | bool
+
+- name: Create test file to verify rsync connection
+  ansible.builtin.copy:
+    content: "Rsync connection test from {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}"
+    dest: "{{ backup_tmp_dir }}/rsync_test_file"
+    mode: '0644'
+  when: backup_rsync_enabled | bool
+
+- name: Test rsync connection to backup server
+  ansible.builtin.command: >
+    rsync -q {{ backup_tmp_dir }}/rsync_test_file
+    {{ backup_rsync_user }}@{{ backup_rsync_host }}:{{ backup_rsync_path }}/rsync_test_file
+  register: rsync_test
+  failed_when: false
+  changed_when: false
+  when: backup_rsync_enabled | bool
+
+- name: Display rsync test results
+  ansible.builtin.debug:
+    msg: "{{ 'Rsync connection successful!' if rsync_test.rc == 0 else 'Rsync connection failed! Please check your SSH setup.' }}"
+  when: backup_rsync_enabled | bool

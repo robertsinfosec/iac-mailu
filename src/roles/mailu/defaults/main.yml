@@ -1,0 +1,48 @@
+---
+# Mailu role defaults
+
+# Debug mode for verbose output
+mailu_debug: false
+
+# Base directory for Mailu
+mailu_base_dir: "/opt/mailu"
+
+# Docker settings
+mailu_docker_network: "mailu"
+mailu_pull_images: true
+
+# Mailu version and container settings
+mailu_version: "latest"
+mailu_registry: "docker.io"  
+mailu_image_prefix: "mailu/"
+
+# Mailu core settings
+mailu_secret_key: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=16') }}"
+mailu_admin_domain: "{{ primary_domain | default('example.com') }}"
+
+# Mail protocols
+mailu_enable_imap: true
+mailu_enable_imaps: true
+mailu_enable_pop3: true
+mailu_enable_pop3s: true
+mailu_enable_smtp: true
+mailu_enable_smtps: true
+mailu_enable_submission: true
+mailu_enable_webmail: true
+mailu_enable_admin: true
+
+# Security settings
+mailu_tls_flavor: "mail"  # mail, cert, notls, mail-letsencrypt
+mailu_subnet: "192.168.203.0/24"
+mailu_hostnames: "{{ all_hostnames | default([]) }}"
+
+# Anti-spam/virus settings
+mailu_antivirus: true
+mailu_antispam: true
+mailu_spam_threshold: 80
+mailu_reject_spam: false
+
+# Resource limits
+mailu_memory_limit: "1g"
+mailu_memory_reservation: "256m"
+mailu_cpu_limit: 1.0

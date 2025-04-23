@@ -1,0 +1,125 @@
+---
+# Main tasks for mail security and deliverability role
+
+- name: Include mail security variables
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../vault/secrets.yml"
+  no_log: true
+  when: mail_security_enabled | bool
+  
+# Generate DNS records for all domains
+- name: Generate DNS records for all domains
+  ansible.builtin.include_tasks: dns_records.yml
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_config: "{{ domain_item.ansible_facts.domain_config }}"
+    domain: "{{ domain_config.domain }}"
+  when: mail_security_enabled | bool
+
+# Configure Postfix for improved security and deliverability
+- name: Configure Postfix for security
+  ansible.builtin.include_tasks: configure_postfix.yml
+  when: mail_security_enabled | bool
+
+# Set up DKIM signing for all domains
+- name: Set up DKIM signing
+  ansible.builtin.include_tasks: setup_dkim.yml
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_config: "{{ domain_item.ansible_facts.domain_config }}"
+    domain: "{{ domain_config.domain }}"
+  when: 
+    - mail_security_enabled | bool
+    - dkim_enabled | bool
+
+# Configure ARC (Authenticated Received Chain) for forwarding scenarios
+- name: Configure ARC
+  ansible.builtin.include_tasks: configure_arc.yml
+  when: mail_security_enabled | bool
+
+# Configure MTA-STS (Mail Transfer Agent Strict Transport Security)
+- name: Configure MTA-STS
+  ansible.builtin.include_tasks: configure_mta_sts.yml
+  when:
+    - mail_security_enabled | bool
+    - mta_sts_enabled | bool
+
+# Configure TLS for improved security
+- name: Configure TLS
+  ansible.builtin.include_tasks: configure_tls.yml
+  when: mail_security_enabled | bool
+
+# Set up rate limiting to prevent abuse
+- name: Configure rate limiting
+  ansible.builtin.include_tasks: configure_rate_limiting.yml
+  when:
+    - mail_security_enabled | bool
+    - rate_limiting_enabled | bool
+
+# Configure Postgrey (greylisting) if enabled
+- name: Configure greylisting
+  ansible.builtin.include_tasks: configure_greylisting.yml
+  when:
+    - mail_security_enabled | bool
+    - greylisting_enabled | default(false) | bool
+
+# Configure BIMI (Brand Indicators for Message Identification)
+- name: Configure BIMI
+  ansible.builtin.include_tasks: configure_bimi.yml
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_config: "{{ domain_item.ansible_facts.domain_config }}"
+    domain: "{{ domain_config.domain }}"
+  when:
+    - mail_security_enabled | bool
+    - bimi_enabled | bool
+
+# Create mail security configuration templates
+- name: Create mail security templates
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - { src: "main.cf.j2", dest: "{{ mailu_base_dir }}/overrides/postfix/main.cf" }
+    - { src: "master.cf.j2", dest: "{{ mailu_base_dir }}/overrides/postfix/master.cf" }
+    - { src: "dovecot.conf.j2", dest: "{{ mailu_base_dir }}/overrides/dovecot/dovecot.conf" }
+    - { src: "rspamd.conf.j2", dest: "{{ mailu_base_dir }}/overrides/rspamd/local.d/security.conf" }
+  when: mail_security_enabled | bool
+  notify: Restart Mailu services
+
+# Create override directories if not already present
+- name: Ensure override directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ mailu_base_dir }}/overrides"
+    - "{{ mailu_base_dir }}/overrides/postfix"
+    - "{{ mailu_base_dir }}/overrides/dovecot"
+    - "{{ mailu_base_dir }}/overrides/rspamd"
+    - "{{ mailu_base_dir }}/overrides/rspamd/local.d"
+  when: mail_security_enabled | bool
+
+# Validate mail server configuration
+- name: Validate mail server configuration
+  ansible.builtin.command: "docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T smtp postconf -c /etc/postfix"
+  register: postconf_result
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: mail_security_enabled | bool
+
+- name: Display postfix configuration validation results
+  ansible.builtin.debug:
+    var: postconf_result.stdout_lines
+  when: 
+    - mail_security_enabled | bool 
+    - postconf_result.rc == 0

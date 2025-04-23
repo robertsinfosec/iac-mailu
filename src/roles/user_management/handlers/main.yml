@@ -1,0 +1,10 @@
+---
+# handlers file for user_management role
+
+- name: Update user facts
+  ansible.builtin.set_fact:
+    users_updated: true
+
+- name: Display user update notification
+  ansible.builtin.debug:
+    msg: "User configuration has been updated. Changes may take a few moments to propagate through the mail system."

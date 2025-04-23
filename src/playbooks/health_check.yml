@@ -1,0 +1,28 @@
+---
+- name: Check Mailu health status
+  hosts: mail_server
+  become: true
+  vars_files:
+    - ../vault/secrets.yml # Load vaulted secrets
+  
+  tasks:
+    - name: Find domain configuration files
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../domains"
+        patterns: '*.yml'
+        recurse: no
+      register: domain_files
+
+    - name: Load variables from first domain file (for health check)
+      ansible.builtin.include_vars:
+        file: "{{ domain_files.files[0].path }}"
+        name: domain_config
+      when: domain_files.files | length > 0
+
+    - name: Run health check
+      ansible.builtin.include_role:
+        name: mailu
+        tasks_from: health_check.yml
+      vars:
+        domain_cfg: "{{ domain_config }}"
+      when: domain_files.files | length > 0

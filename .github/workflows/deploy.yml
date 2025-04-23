@@ -1,0 +1,117 @@
+name: Deploy Mailu Multi-Domain Server
+
+on:
+  push:
+    branches: [ main, production ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/deploy.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      check_mode:
+        description: 'Run in check mode (dry run)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  lint:
+    name: Lint Ansible Playbooks
+    runs-on: self-hosted
+    container:
+      image: cytopia/ansible:2.12-tools
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Run ansible-lint
+        run: |
+          cd src
+          ansible-lint playbooks/*.yml
+
+  deploy-mailu:
+    name: Deploy Mailu Server
+    needs: lint
+    runs-on: self-hosted
+    container:
+      image: cytopia/ansible:2.12
+      options: --user root
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+    
+    environment:
+      name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/production' && 'production' || 'staging') }}
+    
+    env:
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      ANSIBLE_CONFIG: "src/ansible.cfg"
+      
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set environment variables for deployment
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "production" ] || [ "${{ github.ref }}" = "refs/heads/production" ]; then
+            echo "INVENTORY=inventory/production" >> $GITHUB_ENV
+          else
+            echo "INVENTORY=inventory/staging" >> $GITHUB_ENV
+          fi
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "${{ secrets.KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+      
+      - name: Create vault password file
+        run: |
+          echo "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > .vault-password
+          chmod 600 .vault-password
+
+      - name: Install required Python modules
+        run: |
+          pip install docker docker-compose cloudflare
+
+      - name: Install Ansible collections
+        run: |
+          ansible-galaxy collection install community.general
+          ansible-galaxy collection install community.docker
+
+      - name: Run Ansible in check mode first
+        if: ${{ github.event.inputs.check_mode == 'true' || github.event_name == 'pull_request' }}
+        run: |
+          cd src
+          ANSIBLE_FORCE_COLOR=1 ansible-playbook -i ${INVENTORY} playbooks/site.yml --check --diff --vault-password-file ../.vault-password
+
+      - name: Deploy Mailu server
+        if: ${{ github.event.inputs.check_mode != 'true' && github.event_name != 'pull_request' }}
+        run: |
+          cd src
+          ANSIBLE_FORCE_COLOR=1 ansible-playbook -i ${INVENTORY} playbooks/site.yml --vault-password-file ../.vault-password
+          
+      - name: Verify deployment with health check
+        if: ${{ github.event.inputs.check_mode != 'true' && github.event_name != 'pull_request' }}
+        run: |
+          cd src
+          ANSIBLE_FORCE_COLOR=1 ansible-playbook -i ${INVENTORY} playbooks/health_check.yml --vault-password-file ../.vault-password
+          
+      - name: Cleanup sensitive files
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa
+          rm -f .vault-password

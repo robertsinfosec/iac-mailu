@@ -1,0 +1,55 @@
+---
+# Default values for health_check role
+
+# Base directory for health checks
+health_check_base_dir: "/opt/mailu/health"
+
+# Health check interval in minutes
+health_check_interval: 5
+
+# Health check services to monitor
+health_check_services:
+  - name: smtp
+    port: 25
+    type: tcp
+    timeout: 10
+    
+  - name: imap
+    port: 143
+    type: tcp
+    timeout: 5
+    
+  - name: submission
+    port: 587
+    type: tcp
+    timeout: 5
+    
+  - name: webmail
+    path: "/webmail/"
+    type: http
+    timeout: 10
+    status_code: 200
+    
+  - name: admin
+    path: "/admin/"
+    type: http
+    timeout: 10
+    status_code: 200
+
+# Notification settings
+health_check_notify_enabled: true
+health_check_notify_method: "smtp"  # Options: smtp, webhook, script
+health_check_notify_email: "admin@{{ primary_domain | default('example.com') }}"
+health_check_smtp_server: "localhost"
+health_check_smtp_port: 25
+health_check_smtp_from: "health@{{ primary_domain | default('example.com') }}"
+
+# Webhook notification settings
+health_check_webhook_url: ""
+health_check_webhook_method: "POST"
+
+# Custom script notification settings
+health_check_script_path: ""
+
+# Debug mode
+health_check_debug: false

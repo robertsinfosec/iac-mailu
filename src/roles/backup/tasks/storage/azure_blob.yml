@@ -1,0 +1,94 @@
+---
+# Configure Azure Blob Storage for backups
+
+- name: Install Azure CLI
+  ansible.builtin.apt:
+    name: azure-cli
+    state: present
+  when: backup_azure_enabled | bool
+
+- name: Login to Azure using service principal
+  ansible.builtin.shell: |
+    az login --service-principal \
+    --username "{{ vault_azure_app_id | default('') }}" \
+    --password "{{ vault_azure_password | default('') }}" \
+    --tenant "{{ vault_azure_tenant | default('') }}"
+  register: azure_login
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: 
+    - backup_azure_enabled | bool
+    - vault_azure_app_id is defined
+    - vault_azure_password is defined
+    - vault_azure_tenant is defined
+
+- name: Set Azure storage account environment variables
+  ansible.builtin.lineinfile:
+    path: "{{ mailu_base_dir }}/.env"
+    line: "{{ item.key }}={{ item.value }}"
+    regexp: "^{{ item.key }}="
+    state: present
+  loop:
+    - { key: "AZURE_STORAGE_ACCOUNT", value: "{{ backup_azure_storage_account }}" }
+    - { key: "AZURE_STORAGE_KEY", value: "{{ vault_azure_storage_key | default('') }}" }
+  no_log: true
+  when: 
+    - backup_azure_enabled | bool
+    - backup_azure_storage_account is defined
+    - vault_azure_storage_key is defined
+
+- name: Check if Azure container exists
+  ansible.builtin.shell: |
+    az storage container exists --name {{ backup_azure_container }} \
+    --account-name {{ backup_azure_storage_account }} \
+    --account-key {{ vault_azure_storage_key | default('') }}
+  register: azure_container_check
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: backup_azure_enabled | bool
+
+- name: Create Azure container if it doesn't exist
+  ansible.builtin.shell: |
+    az storage container create --name {{ backup_azure_container }} \
+    --account-name {{ backup_azure_storage_account }} \
+    --account-key {{ vault_azure_storage_key | default('') }}
+  when: 
+    - backup_azure_enabled | bool
+    - azure_container_check.stdout is defined
+    - "'exists': false" in azure_container_check.stdout
+
+- name: Test Azure upload
+  ansible.builtin.copy:
+    content: "Azure blob upload test from {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}"
+    dest: "{{ backup_tmp_dir }}/azure_test_file"
+    mode: '0644'
+  when: backup_azure_enabled | bool
+
+- name: Upload test file to Azure
+  ansible.builtin.shell: |
+    az storage blob upload \
+    --account-name {{ backup_azure_storage_account }} \
+    --container-name {{ backup_azure_container }} \
+    --name {{ backup_azure_path }}test-file.txt \
+    --file "{{ backup_tmp_dir }}/azure_test_file" \
+    --account-key {{ vault_azure_storage_key | default('') }}
+  register: azure_upload_test
+  failed_when: false
+  no_log: true
+  when: backup_azure_enabled | bool
+
+- name: Display Azure test results
+  ansible.builtin.debug:
+    msg: "{{ 'Azure upload successful!' if azure_upload_test.rc == 0 else 'Azure upload failed! Please check your Azure credentials and permissions.' }}"
+  when: backup_azure_enabled | bool
+
+- name: Configure lifecycle management for Azure container
+  ansible.builtin.shell: |
+    az storage account management-policy create \
+    --account-name {{ backup_azure_storage_account }} \
+    --policy '{ "rules": [ { "name": "backupretention", "enabled": true, "type": "Lifecycle", "definition": { "filters": { "blobTypes": ["blockBlob"], "prefixMatch": ["{{ backup_azure_path }}"]} , "actions": { "baseBlob": { "delete": { "daysAfterModificationGreaterThan": {{ backup_retention_days }} } } } } ] }'
+  when: 
+    - backup_azure_enabled | bool
+    - azure_upload_test.rc == 0

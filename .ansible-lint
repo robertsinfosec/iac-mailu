@@ -1,0 +1,37 @@
+---
+# .ansible-lint configuration file
+
+# Exclude paths from linting
+exclude_paths:
+  - .github/
+  - .git/
+
+# Enable checking of specific tags
+enable_list:
+  - fqcn-builtins  # Use FQCN (fully qualified collection names)
+  - no-log-password  # Check for passwords without no_log
+  - no-same-owner  # Warn when file permissions include same-owner
+
+# Rules we don't want to follow
+skip_list:
+  - yaml  # Avoid conflict with yamllint
+
+# Define warning formatters
+warn_list:
+  - command-instead-of-module  # Use modules instead of commands where possible
+  - command-instead-of-shell   # Use command instead of shell when possible
+  - deprecated-module          # Warn about deprecated modules
+  - package-latest             # Warn about latest package installations
+  - risky-shell-pipe           # Warn about using pipes in shell commands
+
+# Make output more concise
+verbosity: 1
+
+# Use this when checking role defaults
+loop_var_prefix: ^(item|inner_item|outer_item)
+
+# Where to look for roles
+offline: true
+
+# When true, ignore templated tasks during linting
+skip_action_validation: false

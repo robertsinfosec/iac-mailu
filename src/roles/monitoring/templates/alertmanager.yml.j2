@@ -1,0 +1,59 @@
+global:
+  resolve_timeout: 5m
+  smtp_from: "{{ grafana_smtp_from_address }}"
+  smtp_smarthost: "{{ grafana_smtp_host }}"
+  smtp_require_tls: false
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'system-admins'
+  routes:
+  - match:
+      severity: critical
+    receiver: 'critical-alerts'
+    repeat_interval: 1h
+
+receivers:
+- name: 'system-admins'
+{% if grafana_smtp_enabled %}
+  email_configs:
+  - to: "admin@{{ primary_domain }}"
+    send_resolved: true
+{% endif %}
+{% if alertmanager_ntfy_enabled %}
+  webhook_configs:
+  - url: "{{ alertmanager_ntfy_url }}/{{ alertmanager_ntfy_topic }}"
+    send_resolved: true
+    http_config:
+      authorization:
+        type: Bearer
+        credentials: "{{ lookup('vars', alertmanager_ntfy_auth_token_var) | default('') }}"
+    max_alerts: 5
+{% endif %}
+
+- name: 'critical-alerts'
+{% if grafana_smtp_enabled %}
+  email_configs:
+  - to: "admin@{{ primary_domain }}"
+    send_resolved: true
+{% endif %}
+{% if alertmanager_ntfy_enabled %}
+  webhook_configs:
+  - url: "{{ alertmanager_ntfy_url }}/{{ alertmanager_ntfy_topic }}"
+    send_resolved: true
+    http_config:
+      authorization:
+        type: Bearer
+        credentials: "{{ lookup('vars', alertmanager_ntfy_auth_token_var) | default('') }}"
+    max_alerts: 5
+{% endif %}
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']

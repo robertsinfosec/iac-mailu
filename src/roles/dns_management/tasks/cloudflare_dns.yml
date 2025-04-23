@@ -1,0 +1,87 @@
+---
+# Cloudflare DNS Management tasks
+
+- name: Verify Cloudflare API token is available
+  ansible.builtin.assert:
+    that:
+      - vault_cloudflare_api_token is defined
+    fail_msg: "Cloudflare API token is not defined. Please add 'vault_cloudflare_api_token' to your vault file."
+    quiet: true
+
+- name: Get server public IP address
+  ansible.builtin.uri:
+    url: "https://api.ipify.org"
+    return_content: yes
+  register: public_ip_result
+  delegate_to: localhost
+  run_once: true
+  
+- name: Set public IP fact
+  ansible.builtin.set_fact:
+    server_public_ip: "{{ public_ip_result.content }}"
+  when: public_ip_result.content is defined
+
+- name: Ensure DNS records for the domain
+  community.dns.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "{{ item.record }}"
+    type: "{{ item.type }}"
+    value: "{{ item.value }}"
+    ttl: "{{ item.ttl | default(3600) }}"
+    proxied: "{{ item.proxied | default(false) }}"
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  loop:
+    # A records for hostnames
+    - record: "{{ domain_cfg.hostname | regex_replace('\\.' + domain_cfg.domain + '$', '') }}"
+      type: A
+      value: "{{ server_public_ip }}"
+      proxied: false
+    - record: "{{ domain_cfg.webmail | regex_replace('\\.' + domain_cfg.domain + '$', '') }}"
+      type: A
+      value: "{{ server_public_ip }}"
+      proxied: true
+    - record: "{{ domain_cfg.admin | regex_replace('\\.' + domain_cfg.domain + '$', '') }}"
+      type: A
+      value: "{{ server_public_ip }}"
+      proxied: true
+    # MX record
+    - record: "@"
+      type: MX
+      value: "{{ domain_cfg.hostname }}"
+      ttl: 3600
+      priority: 10
+    # SPF record
+    - record: "@"
+      type: TXT
+      value: "v=spf1 mx -all"
+      ttl: 3600
+    # DMARC record
+    - record: "_dmarc"
+      type: TXT
+      value: "{{ domain_cfg.dmarc_policy | default(default_dmarc_policy | replace('{{ domain }}', domain_cfg.domain)) }}"
+      ttl: 3600
+    # Autoconfig record for email clients
+    - record: "autoconfig"
+      type: A
+      value: "{{ server_public_ip }}"
+      proxied: false
+    # DKIM record if DKIM is enabled
+  register: dns_result
+  when: dns_provider == "cloudflare"
+
+- name: Add DKIM record if DKIM is enabled
+  community.dns.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "{{ dkim_selector }}._domainkey"
+    type: TXT
+    value: "v=DKIM1; k=rsa; p={{ domain_dkim_keys[domain_cfg.domain] | default('') }}"
+    ttl: 3600
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  register: dkim_dns_result
+  when: 
+    - dns_provider == "cloudflare"
+    - dkim_enabled | bool 
+    - domain_dkim_keys is defined 
+    - domain_dkim_keys[domain_cfg.domain] is defined

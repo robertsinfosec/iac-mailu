@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  # Front proxy handling connections
+  front:
+    image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}nginx:${MAILU_VERSION:-{{ mailu_version }}}
+    container_name: mailu_front
+    restart: always
+    env_file: .env
+    logging:
+      driver: json-file
+    ports:
+      # Mail ports
+      - "25:25"
+      - "465:465"
+      - "587:587"
+      - "110:110"
+      - "143:143"
+      - "993:993"
+      - "995:995"
+      # Admin port - exposed only locally for Traefik
+      - "127.0.0.1:8080:80"
+    volumes:
+      - "${MAILU_DATA_HOME:-{{ mailu_base_dir }}/data}:/data"
+      - "${MAILU_DKIM_PATH:-{{ mailu_base_dir }}/dkim}:/dkim"
+      - "${MAILU_CERT_PATH:-{{ mailu_base_dir }}/certs}:/certs"
+    depends_on:
+      - rspamd
+    networks:
+      - default
+      - {{ mailu_docker_network }}
+
+  # Admin interface
+  admin:
+    image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}admin:${MAILU_VERSION:-{{ mailu_version }}}
+    container_name: mailu_admin
+    restart: always
+    env_file: .env
+    logging:
+      driver: json-file
+    volumes:
+      - "${MAILU_DATA_HOME:-{{ mailu_base_dir }}/data}:/data"
+      - "${MAILU_DKIM_PATH:-{{ mailu_base_dir }}/dkim}:/dkim"
+    networks:
+      - default
+
+  # IMAP and delivery service
+  imap:
+    image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}dovecot:${MAILU_VERSION:-{{ mailu_version }}}
+    container_name: mailu_imap
+    restart: always
+    env_file: .env
+    logging:
+      driver: json-file
+    volumes:
+      - "${MAILU_DATA_HOME:-{{ mailu_base_dir }}/data}:/data"
+    networks:
+      - default
+
+  # SMTP service for outgoing mail
+  smtp:
+    image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}postfix:${MAILU_VERSION:-{{ mailu_version }}}
+    container_name: mailu_smtp
+    restart: always
+    env_file: .env
+    logging:
+      driver: json-file
+    volumes:
+      - "${MAILU_DATA_HOME:-{{ mailu_base_dir }}/data}:/data"
+    networks:
+      - default
+
+  # Anti-spam service
+  rspamd:
+    image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}rspamd:${MAILU_VERSION:-{{ mailu_version }}}
+    container_name: mailu_rspamd
+    restart: always
+    env_file: .env
+    logging:
+      driver: json-file
+    volumes:
+      - "${MAILU_FILTER_PATH:-{{ mailu_base_dir }}/filter}:/var/lib/rspamd"
+    networks:
+      - default
+
+  # Webmail service
+  webmail:
+    image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}roundcube:${MAILU_VERSION:-{{ mailu_version }}}
+    container_name: mailu_webmail
+    restart: always
+    env_file: .env
+    logging:
+      driver: json-file
+    volumes:
+      - "${MAILU_DATA_HOME:-{{ mailu_base_dir }}/data}:/data"
+    networks:
+      - default
+
+{% if mailu_antivirus %}
+  # Antivirus service
+  antivirus:
+    image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}clamav:${MAILU_VERSION:-{{ mailu_version }}}
+    container_name: mailu_antivirus
+    restart: always
+    env_file: .env
+    volumes:
+      - "${MAILU_FILTER_PATH:-{{ mailu_base_dir }}/filter}:/data"
+    networks:
+      - default
+{% endif %}
+
+# Custom networks
+networks:
+  default:
+    name: mailu
+  {{ mailu_docker_network }}:
+    external: true

@@ -1,0 +1,41 @@
+---
+# Default values for dns_management role
+
+# Base directory for domain configurations
+domain_config_dir: "{{ playbook_dir }}/../domains"
+
+# Base directory for mail server
+mailu_base_dir: "/opt/mailu"
+
+# DNS records directory
+dns_records_dir: "{{ playbook_dir }}/../dns_records"
+
+# Whether to generate debug output
+dns_debug: false
+
+# DNS provider (currently supported: cloudflare)
+dns_provider: "cloudflare"
+
+# DNS records to manage
+manage_a_records: true
+manage_mx_records: true
+manage_spf_records: true
+manage_dkim_records: true
+manage_dmarc_records: true
+manage_autoconfig_records: true
+
+# Default SPF record value
+default_spf_record: "v=spf1 mx -all"
+
+# Default DMARC policy
+default_dmarc_policy: "v=DMARC1; p=none; rua=mailto:postmaster@{{ domain }}"
+
+# Whether to proxy web records through Cloudflare
+proxy_web_records: true
+
+# Whether to proxy mail records (should always be false)
+proxy_mail_records: false
+
+# DKIM settings - these should match domain_management role settings
+dkim_enabled: true
+dkim_selector: "mail"

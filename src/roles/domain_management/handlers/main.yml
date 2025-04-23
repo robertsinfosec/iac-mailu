@@ -1,0 +1,9 @@
+---
+# handlers file for domain_management role
+
+- name: Reload domain configurations
+  ansible.builtin.meta: refresh_inventory
+
+- name: Update domain facts
+  ansible.builtin.set_fact:
+    domain_configs_updated: true

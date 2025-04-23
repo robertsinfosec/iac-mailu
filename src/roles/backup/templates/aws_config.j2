@@ -1,0 +1,6 @@
+[default]
+region = {{ s3_region }}
+output = json
+{% if s3_endpoint | default("") | length > 0 %}
+endpoint_url = {{ s3_endpoint }}
+{% endif %}

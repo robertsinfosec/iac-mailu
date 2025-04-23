@@ -1,0 +1,9 @@
+version: STSv1
+mode: {{ mta_sts_mode }}
+max_age: {{ mta_sts_max_age }}
+mx: {{ domain_item.ansible_facts.domain_config.hostname }}
+{% if domain_item.ansible_facts.domain_config.additional_mx_hosts is defined %}
+{% for mx_host in domain_item.ansible_facts.domain_config.additional_mx_hosts %}
+mx: {{ mx_host }}
+{% endfor %}
+{% endif %}

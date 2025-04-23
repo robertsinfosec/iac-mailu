@@ -1,0 +1,125 @@
+version: '3'
+
+networks:
+  monitoring:
+    name: {{ monitoring_network_name }}
+    external: false
+  mailu_network:
+    name: {{ traefik_network_name }}
+    external: true
+
+services:
+  prometheus:
+    image: prom/prometheus:{{ prometheus_version }}
+    volumes:
+      - {{ prometheus_config_dir }}/prometheus.yml:/etc/prometheus/prometheus.yml
+      - {{ prometheus_config_dir }}/alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - {{ prometheus_config_dir }}/recording_rules.yml:/etc/prometheus/recording_rules.yml
+      - {{ prometheus_data_dir }}:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time={{ prometheus_retention_time }}'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "{{ prometheus_port }}:9090"
+    restart: always
+    networks:
+      - monitoring
+      - mailu_network
+
+  alertmanager:
+    image: prom/alertmanager:{{ alertmanager_version }}
+    volumes:
+      - {{ alertmanager_config_dir }}/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - {{ alertmanager_data_dir }}:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    ports:
+      - "{{ alertmanager_port }}:9093"
+    restart: always
+    networks:
+      - monitoring
+
+  node-exporter:
+    image: prom/node-exporter:{{ node_exporter_version }}
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "{{ node_exporter_port }}:9100"
+    restart: always
+    networks:
+      - monitoring
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:{{ blackbox_exporter_version }}
+    volumes:
+      - {{ monitoring_base_dir }}/blackbox.yml:/etc/blackbox_exporter/config.yml
+    ports:
+      - "{{ blackbox_exporter_port }}:9115"
+    restart: always
+    networks:
+      - monitoring
+      - mailu_network
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "8080:8080"
+    restart: always
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:{{ grafana_version }}
+    volumes:
+      - {{ grafana_data_dir }}:/var/lib/grafana
+      - {{ grafana_config_dir }}/grafana.ini:/etc/grafana/grafana.ini
+      - {{ grafana_config_dir }}/provisioning:/etc/grafana/provisioning
+    ports:
+      - "{{ grafana_port }}:3000"
+    restart: always
+    networks:
+      - monitoring
+      - mailu_network
+
+  loki:
+    image: grafana/loki:{{ loki_version }}
+    volumes:
+      - {{ loki_config_dir }}/loki-config.yml:/etc/loki/local-config.yaml
+      - {{ loki_data_dir }}:/loki
+    ports:
+      - "{{ loki_port }}:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: always
+    networks:
+      - monitoring
+
+  promtail:
+    image: grafana/promtail:{{ promtail_version }}
+    volumes:
+      - {{ promtail_config_dir }}/promtail-config.yml:/etc/promtail/config.yml
+      - /var/log:/var/log:ro
+      - {{ mailu_base_dir }}/log:/mailu/log:ro
+    command: -config.file=/etc/promtail/config.yml
+    ports:
+      - "{{ promtail_port }}:9080"
+    restart: always
+    networks:
+      - monitoring
+      - mailu_network

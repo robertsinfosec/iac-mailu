@@ -1,0 +1,60 @@
+---
+# tasks file for health_check role
+
+- name: Ensure health check directory exists
+  ansible.builtin.file:
+    path: "{{ health_check_base_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Install health check dependencies
+  ansible.builtin.apt:
+    name:
+      - python3-pip
+      - curl
+      - netcat-openbsd
+    state: present
+  become: true
+
+- name: Install Python dependencies for health check
+  ansible.builtin.pip:
+    name:
+      - requests
+      - dnspython
+      - smtplib
+    state: present
+  become: true
+
+- name: Generate health check script
+  ansible.builtin.template:
+    src: health_check.py.j2
+    dest: "{{ health_check_base_dir }}/health_check.py"
+    mode: '0755'
+
+- name: Generate notification script
+  ansible.builtin.template:
+    src: "notify_{{ health_check_notify_method }}.py.j2"
+    dest: "{{ health_check_base_dir }}/notify.py"
+    mode: '0755'
+  when: health_check_notify_enabled | bool
+
+- name: Set up regular health check cron job
+  ansible.builtin.cron:
+    name: "Mailu health check"
+    job: "cd {{ health_check_base_dir }} && python3 health_check.py > /var/log/mailu-health-check.log 2>&1"
+    minute: "*/{{ health_check_interval }}"
+    user: "{{ ansible_user }}"
+  when: health_check_interval | int > 0
+
+- name: Run health check immediately
+  ansible.builtin.command:
+    cmd: python3 health_check.py
+    chdir: "{{ health_check_base_dir }}"
+  register: health_check_result
+  changed_when: false
+  failed_when: false
+
+- name: Display health check result
+  ansible.builtin.debug:
+    msg: "{{ health_check_result.stdout_lines }}"
+  when: health_check_result is defined and health_check_result.stdout_lines is defined

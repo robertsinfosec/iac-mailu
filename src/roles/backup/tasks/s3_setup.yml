@@ -1,0 +1,52 @@
+---
+# S3 backup configuration tasks
+
+- name: Install AWS CLI
+  ansible.builtin.apt:
+    name: awscli
+    state: present
+  become: true
+
+- name: Ensure AWS config directory exists
+  ansible.builtin.file:
+    path: "{{ backup_local_dir }}/config/.aws"
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Create AWS config file
+  ansible.builtin.template:
+    src: aws_config.j2
+    dest: "{{ backup_local_dir }}/config/.aws/config"
+    mode: '0600'
+    owner: root
+    group: root
+
+- name: Create AWS credentials file
+  ansible.builtin.template:
+    src: aws_credentials.j2
+    dest: "{{ backup_local_dir }}/config/.aws/credentials"
+    mode: '0600'
+    owner: root
+    group: root
+  no_log: true
+
+- name: Create S3 bucket if it doesn't exist
+  amazon.aws.s3_bucket:
+    name: "{{ backup_s3_bucket }}"
+    region: "{{ backup_s3_region }}"
+    state: present
+  when: backup_s3_create_bucket | bool
+  delegate_to: localhost
+  run_once: true
+
+- name: Configure S3 bucket lifecycle policy
+  amazon.aws.s3_lifecycle:
+    name: "{{ backup_s3_bucket }}"
+    region: "{{ backup_s3_region }}"
+    rules: "{{ lookup('template', 's3_lifecycle_policy.j2') | from_json }}"
+    state: present
+  when: backup_s3_lifecycle_policy | bool
+  delegate_to: localhost
+  run_once: true

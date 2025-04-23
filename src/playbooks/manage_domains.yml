@@ -1,0 +1,137 @@
+---
+- name: Manage Mailu Domains
+  hosts: mail_server
+  become: true
+  vars_files:
+    - ../vault/secrets.yml
+  
+  vars:
+    domain_action: "list"  # Default action: list, add, remove, update, sync
+    target_domain: ""      # Domain to operate on
+    domain_file: ""        # Path to domain config file (for add/update)
+    
+  tasks:
+    - name: Load domain configurations
+      include_vars:
+        dir: "{{ playbook_dir }}/../domains"
+        extensions:
+          - yml
+        files_matching: "*.yml"
+        name: loaded_domains
+      when: domain_action == "list" or domain_action == "sync"
+    
+    - name: List all domains
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu domain_list
+      register: domain_list
+      changed_when: false
+      when: domain_action == "list"
+    
+    - name: Display all domains
+      ansible.builtin.debug:
+        msg: "{{ domain_list.stdout_lines }}"
+      when: domain_action == "list"
+    
+    - name: Load target domain configuration
+      include_vars:
+        file: "{{ domain_file }}"
+        name: new_domain_config
+      when: (domain_action == "add" or domain_action == "update") and domain_file != ""
+    
+    - name: Add new domain
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu domain add {{ target_domain }}
+      register: domain_add_result
+      when: domain_action == "add"
+      changed_when: domain_add_result.rc == 0
+    
+    - name: Add domain aliases
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu alias_add {{ item }} {{ target_domain }}
+      with_items: "{{ new_domain_config.aliases | default([]) }}"
+      register: alias_add_result
+      when: domain_action == "add" and new_domain_config.aliases is defined and new_domain_config.aliases | length > 0
+      changed_when: alias_add_result.rc == 0
+    
+    - name: Generate DKIM keys for domain
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu dkim {{ target_domain }}
+      register: dkim_gen_result
+      when: domain_action == "add" and new_domain_config.dkim_enabled | default(true)
+      changed_when: dkim_gen_result.rc == 0
+    
+    - name: Retrieve DKIM key
+      ansible.builtin.shell: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        cat /data/dkim/{{ target_domain }}.dkim.key | tr -d '\n'
+      register: dkim_key_result
+      when: domain_action == "add" and new_domain_config.dkim_enabled | default(true)
+      changed_when: false
+    
+    - name: Store DKIM key in variable
+      ansible.builtin.set_fact:
+        domain_dkim_keys: "{{ domain_dkim_keys | default({}) | combine({target_domain: dkim_key_result.stdout}) }}"
+      when: domain_action == "add" and dkim_key_result.stdout is defined
+    
+    - name: Remove domain
+      ansible.builtin.command: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        flask mailu domain_remove {{ target_domain }}
+      register: domain_rm_result
+      when: domain_action == "remove"
+      changed_when: domain_rm_result.rc == 0
+    
+    - name: Synchronize all domains from config
+      block:
+        - name: Get current domains
+          ansible.builtin.command: >
+            docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+            flask mailu domain_list
+          register: current_domains
+          changed_when: false
+        
+        - name: Add missing domains
+          ansible.builtin.command: >
+            docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+            flask mailu domain add {{ domain_key }}
+          loop: "{{ loaded_domains | dict2items }}"
+          loop_control:
+            loop_var: domain_item
+          vars:
+            domain_key: "{{ domain_item.key }}"
+          when: domain_key not in current_domains.stdout
+          register: sync_add_result
+          changed_when: sync_add_result.rc == 0
+        
+        # Additional synchronization tasks could be added here
+      when: domain_action == "sync"
+    
+    - name: Update Traefik configuration
+      include_role:
+        name: mailu
+        tasks_from: manage_domains
+      when: domain_action == "add" or domain_action == "remove" or domain_action == "sync"
+    
+    - name: Display domain management results
+      ansible.builtin.debug:
+        msg: "{{ operation_result }}"
+      vars:
+        operation_result: >-
+          {% if domain_action == 'add' and domain_add_result.rc == 0 %}
+          Domain {{ target_domain }} has been added successfully.
+          {% if dkim_key_result.stdout is defined %}
+          DKIM key generated. Update your DNS records with this key.
+          {% endif %}
+          {% elif domain_action == 'remove' and domain_rm_result.rc == 0 %}
+          Domain {{ target_domain }} has been removed successfully.
+          {% elif domain_action == 'list' %}
+          Listed all domains.
+          {% elif domain_action == 'sync' %}
+          Synchronized domains from configuration files.
+          {% else %}
+          No changes made or operation failed.
+          {% endif %}

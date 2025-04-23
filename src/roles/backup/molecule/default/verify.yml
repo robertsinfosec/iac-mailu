@@ -1,0 +1,46 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Verify backup directories exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: backup_dirs
+      failed_when: not backup_dirs.stat.exists
+      loop:
+        - "{{ backup_base_dir }}"
+        - "{{ backup_tmp_dir }}"
+        - "{{ backup_archive_dir }}"
+    
+    - name: Verify backup script exists
+      ansible.builtin.stat:
+        path: "{{ backup_base_dir }}/backup.sh"
+      register: backup_script
+      failed_when: not backup_script.stat.exists or not backup_script.stat.executable
+    
+    - name: Verify restore script exists
+      ansible.builtin.stat:
+        path: "{{ backup_base_dir }}/restore.sh"
+      register: restore_script
+      failed_when: not restore_script.stat.exists or not restore_script.stat.executable
+    
+    - name: Check for backup encryption key in .env file
+      ansible.builtin.command: grep -q "BACKUP_ENCRYPTION_KEY" {{ mailu_base_dir }}/.env
+      changed_when: false
+    
+    - name: Check if cron job is configured
+      ansible.builtin.command: crontab -l -u root
+      register: cron_content
+      changed_when: false
+      failed_when: false
+    
+    - name: Verify cron job exists
+      ansible.builtin.assert:
+        that: cron_content.stdout is search('Mailu backup')
+        fail_msg: "Backup cron job not found in root's crontab"
+        success_msg: "Backup cron job properly configured"
+      when: 
+        - cron_content.rc == 0
+        - cron_content.stdout != ""

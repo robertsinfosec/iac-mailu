@@ -1,0 +1,2 @@
+[mail_server]
+mailu.example.com ansible_user=root # Replace with your actual hostname and user

@@ -1,0 +1,29 @@
+---
+# Example domain configuration for Mailu
+domain: example.com
+hostname: mail.example.com
+webmail: webmail.example.com
+admin: admin.example.com
+aliases:
+  - example.org
+  - example.net
+relay_enabled: false
+relay_host: null
+relay_port: null
+relay_username: null
+relay_password: null
+dkim_enabled: true
+dkim_selector: mail
+spf_record: "v=spf1 mx a ip4:{{ ansible_default_ipv4.address }} -all"
+max_users: -1  # -1 means unlimited
+max_aliases: -1
+max_quota_bytes: 1073741824  # 1GB default quota
+catchall_enabled: false
+catchall_destination: null
+postmaster_address: postmaster@example.com
+dns:
+  mx:
+    priority: 10
+    hostname: mail.example.com
+  additional_mx_hosts: []
+  spf_include: []

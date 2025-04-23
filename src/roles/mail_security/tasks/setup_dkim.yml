@@ -1,0 +1,61 @@
+---
+# Tasks for setting up DKIM for a domain
+
+- name: Ensure DKIM directory exists
+  ansible.builtin.file:
+    path: "{{ mailu_base_dir }}/dkim"
+    state: directory
+    mode: '0755'
+  run_once: true
+
+- name: Check if DKIM key already exists for domain
+  ansible.builtin.stat:
+    path: "{{ mailu_base_dir }}/dkim/{{ domain }}.{{ dkim_selector }}.key"
+  register: dkim_key_file
+
+- name: Generate DKIM key pair if it doesn't exist
+  ansible.builtin.command: >
+    docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin 
+    openssl genrsa -out /tmp/{{ domain }}.{{ dkim_selector }}.key {{ dkim_key_size }}
+  args:
+    creates: "{{ mailu_base_dir }}/dkim/{{ domain }}.{{ dkim_selector }}.key"
+  when: not dkim_key_file.stat.exists
+  register: dkim_key_generation
+  changed_when: dkim_key_generation.rc == 0
+
+- name: Copy DKIM private key from container to host
+  ansible.builtin.command: >
+    docker cp $(docker-compose -f {{ mailu_base_dir }}/docker-compose.yml ps -q admin):/tmp/{{ domain }}.{{ dkim_selector }}.key 
+    {{ mailu_base_dir }}/dkim/{{ domain }}.{{ dkim_selector }}.key
+  args:
+    creates: "{{ mailu_base_dir }}/dkim/{{ domain }}.{{ dkim_selector }}.key"
+  when: dkim_key_generation.changed | default(false)
+  changed_when: false
+
+- name: Extract public key from private key
+  ansible.builtin.shell: >
+    openssl rsa -in {{ mailu_base_dir }}/dkim/{{ domain }}.{{ dkim_selector }}.key -pubout |
+    grep -v "^-" | tr -d '\n'
+  args:
+    creates: "{{ mailu_base_dir }}/dkim/{{ domain }}.{{ dkim_selector }}.txt"
+  register: dkim_public_key
+  when: not dkim_key_file.stat.exists or dkim_key_generation.changed | default(false)
+  changed_when: dkim_public_key.rc == 0
+
+- name: Format DKIM DNS record
+  ansible.builtin.copy:
+    content: "v=DKIM1; k=rsa; p={{ dkim_public_key.stdout }}"
+    dest: "{{ mailu_base_dir }}/dkim/{{ domain }}.{{ dkim_selector }}.txt"
+    mode: '0644'
+  when: dkim_public_key.changed | default(false)
+
+- name: Configure DKIM signing in Rspamd for domain
+  ansible.builtin.template:
+    src: dkim_signing.conf.j2
+    dest: "{{ mailu_base_dir }}/overrides/rspamd/local.d/dkim_signing.conf"
+    mode: '0644'
+  notify: Restart Rspamd container
+
+- name: Display DKIM setup information
+  ansible.builtin.debug:
+    msg: "DKIM setup completed for {{ domain }} with selector {{ dkim_selector }}"

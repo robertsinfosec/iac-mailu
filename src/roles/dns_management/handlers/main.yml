@@ -1,0 +1,9 @@
+---
+# handlers file for dns_management role
+
+- name: Regenerate DNS documentation
+  ansible.builtin.shell:
+    cmd: cat {{ dns_records_dir }}/*.dns > {{ dns_records_dir }}/all_domains.dns
+  args:
+    executable: /bin/bash
+  changed_when: false

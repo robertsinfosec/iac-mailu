@@ -1,0 +1,162 @@
+---
+# Domain Management role - loads and manages domain configurations
+
+- name: Find domain configuration files
+  ansible.builtin.find:
+    paths: "{{ playbook_dir }}/../domains"
+    patterns: '*.yml'
+    recurse: no
+  register: domain_files
+
+- name: Ensure domain configuration directory exists
+  ansible.builtin.file:
+    path: "{{ domain_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Load variables from each domain file
+  ansible.builtin.include_vars:
+    file: "{{ item.path }}"
+    name: domain_config
+  loop: "{{ domain_files.files }}"
+  loop_control:
+    loop_var: item
+  register: loaded_domains
+
+- name: Debug loaded domain files (optional)
+  ansible.builtin.debug:
+    var: domain_files.files
+  when: domain_management_debug | default(false) | bool
+
+- name: Debug loaded domain configs (optional)
+  ansible.builtin.debug:
+    var: loaded_domains
+  when: domain_management_debug | default(false) | bool
+
+- name: Set primary domain fact (first domain found)
+  ansible.builtin.set_fact:
+    primary_domain: "{{ loaded_domains.results[0].ansible_facts.domain_config.domain }}"
+  when: loaded_domains.results | length > 0
+
+- name: Set all hostnames fact
+  ansible.builtin.set_fact:
+    all_hostnames: "{{ loaded_domains.results | map(attribute='ansible_facts.domain_config') | map(attribute='hostname') | list + 
+                       loaded_domains.results | map(attribute='ansible_facts.domain_config') | map(attribute='webmail') | list + 
+                       loaded_domains.results | map(attribute='ansible_facts.domain_config') | map(attribute='admin') | list }}"
+  when: loaded_domains.results | length > 0
+
+- name: Debug primary domain and hostnames (optional)
+  ansible.builtin.debug:
+    msg: "Primary Domain: {{ primary_domain }}, All Hostnames: {{ all_hostnames }}"
+  when: primary_domain is defined and domain_management_debug | default(false) | bool
+
+- name: Wait for Mailu admin API to become available
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/status"
+    status_code: 200
+  register: result
+  until: result.status == 200
+  retries: 60
+  delay: 5
+  changed_when: false
+  failed_when: false
+
+- name: Create domain in Mailu via Admin API
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/domains"
+    method: POST
+    body_format: json
+    body:
+      name: "{{ domain_cfg.domain }}"
+      max_users: "{{ domain_cfg.max_users | default(domain_max_users) }}"
+      max_aliases: "{{ domain_cfg.max_aliases | default(domain_max_aliases) }}"
+      max_quota_bytes: "{{ domain_cfg.max_quota_bytes | default(domain_max_quota_bytes) }}"
+      comment: "Domain added by Ansible"
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if domain exists
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  register: domain_api_result
+  # Use 'failed_when' to handle specific error conditions
+  failed_when: >
+    domain_api_result.status != 201 and 
+    domain_api_result.status != 200 and
+    domain_api_result.status != 204 and
+    (domain_api_result.status != 400 or 'already exists' not in domain_api_result.json.get('message', ''))
+  when: result.status is defined and result.status == 200
+
+- name: Create domain aliases in Mailu
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/aliases"
+    method: POST
+    body_format: json
+    body:
+      destination: "{{ domain_cfg.domain }}"
+      wildcard: false
+      comment: "Domain alias added by Ansible"
+      localpart: ""
+      email: "{{ item }}"
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if alias exists
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+  loop: "{{ domain_cfg.domain_aliases | default([]) }}"
+  loop_control:
+    loop_var: item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  register: alias_api_result
+  failed_when: >
+    alias_api_result.status != 201 and 
+    alias_api_result.status != 200 and
+    alias_api_result.status != 204 and
+    (alias_api_result.status != 400 or 'already exists' not in alias_api_result.json.get('message', ''))
+  when: domain_cfg.domain_aliases is defined and result.status is defined and result.status == 200
+
+- name: Generate DKIM keys for domain
+  ansible.builtin.command:
+    cmd: docker exec mailu_admin flask mailu dkim {{ domain_cfg.domain }}
+  args:
+    creates: "{{ mailu_base_dir }}/data/dkim/{{ domain_cfg.domain }}.dkim.key"
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  register: dkim_gen_result
+  changed_when: dkim_gen_result.rc == 0
+  when: dkim_enabled | bool
+
+- name: Get DKIM key for DNS
+  ansible.builtin.shell: |
+    docker exec mailu_admin cat /data/dkim/{{ domain_cfg.domain }}.dkim.key | grep -v '^-' | tr -d '\n'
+  register: dkim_key_result
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  changed_when: false
+  failed_when: dkim_key_result.rc != 0
+  when: dkim_enabled | bool
+
+- name: Update domain fact with DKIM key
+  ansible.builtin.set_fact:
+    domain_dkim_keys: "{{ domain_dkim_keys | default({}) | combine({domain_cfg.domain: dkim_key_result.stdout}) }}"
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  when: dkim_enabled | bool and dkim_key_result.stdout is defined
+
+- name: Validate domain configurations
+  ansible.builtin.include_tasks: validate_domains.yml
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"

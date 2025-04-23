@@ -1,0 +1,108 @@
+---
+# Configure Google Cloud Storage for backups
+
+- name: Install Google Cloud SDK
+  ansible.builtin.block:
+    - name: Add Google Cloud SDK apt key
+      ansible.builtin.apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: Add Google Cloud SDK apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb https://packages.cloud.google.com/apt cloud-sdk main"
+        state: present
+
+    - name: Install Google Cloud SDK
+      ansible.builtin.apt:
+        name: google-cloud-sdk
+        state: present
+        update_cache: yes
+  when: backup_gcp_enabled | bool
+
+- name: Create directory for GCP credentials
+  ansible.builtin.file:
+    path: "/root/.config/gcloud"
+    state: directory
+    mode: '0700'
+  when: backup_gcp_enabled | bool
+
+- name: Save GCP credentials to file
+  ansible.builtin.copy:
+    content: "{{ vault_gcp_credentials | default('{}') }}"
+    dest: "/root/.config/gcloud/service-account.json"
+    mode: '0600'
+  no_log: true
+  when: 
+    - backup_gcp_enabled | bool
+    - vault_gcp_credentials is defined
+
+- name: Authenticate with Google Cloud using service account
+  ansible.builtin.shell: |
+    gcloud auth activate-service-account --key-file="/root/.config/gcloud/service-account.json"
+  register: gcloud_auth
+  changed_when: gcloud_auth.rc == 0
+  failed_when: false
+  when: 
+    - backup_gcp_enabled | bool
+    - vault_gcp_credentials is defined
+
+- name: Set default GCP project
+  ansible.builtin.shell: |
+    gcloud config set project {{ backup_gcp_project }}
+  when: 
+    - backup_gcp_enabled | bool
+    - backup_gcp_project is defined
+
+- name: Check if GCS bucket exists
+  ansible.builtin.shell: |
+    gcloud storage buckets describe gs://{{ backup_gcp_bucket }} 2>/dev/null
+  register: gcs_bucket_check
+  changed_when: false
+  failed_when: false
+  when: backup_gcp_enabled | bool
+
+- name: Create GCS bucket if it doesn't exist
+  ansible.builtin.shell: |
+    gcloud storage buckets create gs://{{ backup_gcp_bucket }} --location={{ backup_gcp_region | default('us-central1') }}
+  when: 
+    - backup_gcp_enabled | bool
+    - gcs_bucket_check.rc != 0
+
+- name: Configure GCS bucket lifecycle policy
+  ansible.builtin.shell: |
+    gcloud storage buckets update gs://{{ backup_gcp_bucket }} --lifecycle-file=/dev/stdin <<EOF
+    {
+      "rule": [
+        {
+          "action": {"type": "Delete"},
+          "condition": {
+            "age": {{ backup_retention_days }},
+            "matchesPrefix": ["{{ backup_gcp_path }}"]
+          }
+        }
+      ]
+    }
+    EOF
+  when: 
+    - backup_gcp_enabled | bool
+    - gcs_bucket_check.rc == 0 or gcs_bucket_check.rc == 1
+
+- name: Test GCS upload
+  ansible.builtin.copy:
+    content: "GCS upload test from {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}"
+    dest: "{{ backup_tmp_dir }}/gcs_test_file"
+    mode: '0644'
+  when: backup_gcp_enabled | bool
+
+- name: Upload test file to GCS
+  ansible.builtin.shell: |
+    gcloud storage cp "{{ backup_tmp_dir }}/gcs_test_file" gs://{{ backup_gcp_bucket }}/{{ backup_gcp_path }}test-file.txt
+  register: gcs_upload_test
+  failed_when: false
+  when: backup_gcp_enabled | bool
+
+- name: Display GCS test results
+  ansible.builtin.debug:
+    msg: "{{ 'GCS upload successful!' if gcs_upload_test.rc == 0 else 'GCS upload failed! Please check your Google Cloud credentials and permissions.' }}"
+  when: backup_gcp_enabled | bool

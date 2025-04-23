@@ -1,0 +1,95 @@
+---
+# Tasks for managing users per domain
+
+- name: Create users for domain {{ domain_cfg.domain }}
+  ansible.builtin.uri:
+    url: "{{ mailu_admin_api_url }}/users"
+    method: POST
+    body_format: json
+    body:
+      localpart: "{{ item.name }}"
+      domain: "{{ domain_cfg.domain }}"
+      password: "{{ lookup('vars', item.password_var) }}"
+      quota_bytes: "{{ item.quota_bytes | default(default_user_quota_bytes) }}"
+      enable_imap: "{{ item.enable_imap | default(default_user_enable_imap) }}"
+      enable_pop: "{{ item.enable_pop | default(default_user_enable_pop) }}"
+      enabled: true
+      comment: "{{ item.comment | default('User created by Ansible') }}"
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if user exists
+  loop: "{{ domain_cfg.users }}"
+  register: user_creation_result
+  # Handle case where user already exists
+  failed_when: >
+    user_creation_result.status != 201 and 
+    user_creation_result.status != 200 and
+    user_creation_result.status != 204 and
+    (user_creation_result.status != 400 or 'already exists' not in user_creation_result.json.get('message', ''))
+  when: domain_cfg.users is defined
+
+- name: Update user settings
+  ansible.builtin.uri:
+    url: "{{ mailu_admin_api_url }}/user/{{ item.name }}@{{ domain_cfg.domain }}"
+    method: PUT
+    body_format: json
+    body:
+      spam_enabled: "{{ item.spam_enabled | default(default_user_spam_enabled) }}"
+      spam_threshold: "{{ item.spam_threshold | default(default_user_spam_threshold) }}"
+      enable_webmail: "{{ item.enable_webmail | default(default_user_enable_webmail) }}"
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+    status_code: [200, 204]
+  loop: "{{ domain_cfg.users }}"
+  register: user_update_result
+  failed_when: false  # Skip failures for now
+  when: domain_cfg.users is defined
+
+- name: Create catchall aliases for domain
+  ansible.builtin.uri:
+    url: "{{ mailu_admin_api_url }}/aliases"
+    method: POST
+    body_format: json
+    body:
+      destination: "{{ item.name }}@{{ domain_cfg.domain }}"
+      wildcard: true
+      comment: "Catchall address for {{ domain_cfg.domain }}"
+      localpart: ""
+      email: "@{{ domain_cfg.domain }}"
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if alias exists
+  loop: "{{ domain_cfg.users }}"
+  when: 
+    - domain_cfg.users is defined 
+    - enable_catchall | bool
+    - item.catchall | default(false) | bool
+  register: catchall_creation_result
+  failed_when: >
+    catchall_creation_result.status != 201 and 
+    catchall_creation_result.status != 200 and
+    catchall_creation_result.status != 204 and
+    (catchall_creation_result.status != 400 or 'already exists' not in catchall_creation_result.json.get('message', ''))
+
+- name: Create user aliases
+  ansible.builtin.uri:
+    url: "{{ mailu_admin_api_url }}/aliases"
+    method: POST
+    body_format: json
+    body:
+      destination: "{{ item.0.name }}@{{ domain_cfg.domain }}"
+      wildcard: false
+      comment: "Alias for {{ item.0.name }}@{{ domain_cfg.domain }}"
+      localpart: "{{ item.1.localpart }}"
+      email: "{{ item.1.localpart }}@{{ domain_cfg.domain }}"
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if alias exists
+  loop: "{{ domain_cfg.users | subelements('aliases', skip_missing=True) }}"
+  register: alias_creation_result
+  failed_when: >
+    alias_creation_result.status != 201 and 
+    alias_creation_result.status != 200 and
+    alias_creation_result.status != 204 and
+    (alias_creation_result.status != 400 or 'already exists' not in alias_creation_result.json.get('message', ''))
+  when: domain_cfg.users is defined

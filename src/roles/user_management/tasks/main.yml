@@ -1,0 +1,71 @@
+---
+# User Management role - handles user accounts in Mailu
+
+- name: Wait for Mailu admin API to become available
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/status"
+    status_code: 200
+  register: result
+  until: result.status == 200
+  retries: 60
+  delay: 5
+  changed_when: false
+  failed_when: false
+
+- name: Find domain configuration files
+  ansible.builtin.find:
+    paths: "{{ domain_config_dir }}"
+    patterns: '*.yml'
+    recurse: no
+  register: domain_files
+  when: result.status is defined and result.status == 200
+
+- name: Load variables from each domain file
+  ansible.builtin.include_vars:
+    file: "{{ item.path }}"
+    name: domain_config
+  loop: "{{ domain_files.files }}"
+  loop_control:
+    loop_var: item
+  register: loaded_domains
+  when: domain_files is defined and domain_files.files is defined
+
+- name: Debug loaded domain configs (optional)
+  ansible.builtin.debug:
+    var: loaded_domains
+  when: user_debug | default(false) | bool
+
+- name: Create user accounts
+  ansible.builtin.include_tasks: create_users.yml
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  when: result.status is defined and result.status == 200
+
+- name: Update user accounts that need password changes
+  ansible.builtin.include_tasks: update_users.yml
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  when: result.status is defined and result.status == 200
+
+- name: Display mailbox summary
+  ansible.builtin.uri:
+    url: "{{ mailu_admin_api_url }}/users"
+    method: GET
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+    status_code: 200
+  register: user_list
+  failed_when: false
+  changed_when: false
+  when: result.status is defined and result.status == 200
+
+- name: Show user information
+  ansible.builtin.debug:
+    msg: "Successfully configured {{ user_list.json | length }} users across {{ loaded_domains.results | default([]) | length }} domains"
+  when: user_list is defined and user_list.json is defined

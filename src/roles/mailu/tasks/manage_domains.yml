@@ -1,0 +1,230 @@
+---
+# Tasks for managing domains in Mailu
+
+- name: Load domain configurations
+  include_vars:
+    dir: "{{ playbook_dir }}/../../domains"
+    extensions:
+      - yml
+    files_matching: "*.yml"
+    name: all_domains
+
+- name: Ensure Traefik configuration directory exists
+  ansible.builtin.file:
+    path: "{{ mailu_base_dir }}/traefik/conf.d"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Generate Traefik dynamic configuration for domains
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../../templates/traefik_dynamic_domains.yml.j2"
+    dest: "{{ mailu_base_dir }}/traefik/conf.d/dynamic_domains.yml"
+    owner: root
+    group: root
+    mode: '0644'
+  register: traefik_config
+
+- name: Restart Traefik if configuration changed
+  ansible.builtin.shell: >
+    docker-compose -f {{ mailu_base_dir }}/docker-compose.yml restart traefik
+  when: traefik_config.changed
+
+- name: Generate DNS records for domains
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../../templates/dns_records.j2"
+    dest: "{{ mailu_base_dir }}/dns/{{ item.key }}.records"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ all_domains | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: all_domains is defined
+
+- name: Update DKIM keys in domain configurations
+  block:
+    - name: Retrieve DKIM keys for all domains
+      ansible.builtin.shell: >
+        docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+        cat /data/dkim/{{ item.key }}.dkim.key | tr -d '\n'
+      register: dkim_keys
+      loop: "{{ all_domains | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      changed_when: false
+      failed_when: false
+      when: item.value.dkim_enabled | default(true)
+    
+    - name: Create domain DKIM keys directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../../domains/dkim"
+        state: directory
+        mode: '0755'
+      
+    - name: Save DKIM keys to files
+      ansible.builtin.copy:
+        content: "{{ item.stdout }}"
+        dest: "{{ playbook_dir }}/../../domains/dkim/{{ item.item.key }}.key"
+        mode: '0644'
+      loop: "{{ dkim_keys.results }}"
+      loop_control:
+        label: "{{ item.item.key }}"
+      when: item.stdout is defined and item.stdout != ""
+
+- name: Load domain configurations
+  ansible.builtin.include_vars:
+    dir: "{{ playbook_dir }}/../domains"
+    extensions:
+      - yml
+    files_matching: "*.yml"
+    name: loaded_domains
+
+- name: Register domains in Mailu
+  ansible.builtin.command: >
+    docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+    flask mailu domain {{ item.key }} {{ item.value.hostname }}
+  register: domain_registration
+  with_dict: "{{ loaded_domains }}"
+  changed_when: "'already exists' not in domain_registration.stdout"
+  failed_when:
+    - domain_registration.rc != 0
+    - "'already exists' not in domain_registration.stdout"
+
+- name: Ensure domain aliases are registered
+  ansible.builtin.command: >
+    docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+    flask mailu alias {{ item.1 }} {{ item.0 }}
+  register: domain_alias_registration
+  with_nested:
+    - "{{ loaded_domains.keys() }}"
+    - "{{ item.value.aliases | default([]) }}"
+  loop_control:
+    label: "{{ item.1 }} -> {{ item.0 }}"
+  changed_when: "'already exists' not in domain_alias_registration.stdout"
+  failed_when:
+    - domain_alias_registration.rc != 0
+    - "'already exists' not in domain_alias_registration.stdout"
+
+- name: Update Traefik configuration for all domains
+  ansible.builtin.template:
+    src: "traefik_dynamic_domains.yml.j2"
+    dest: "{{ traefik_config_dir }}/domains.yml"
+    mode: "0644"
+  notify: Restart Traefik service
+
+- name: Update domain-specific mail security configurations
+  include_role:
+    name: mail_security
+    tasks_from: dns_records
+  loop: "{{ loaded_domains | dict2items }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_config: "{{ domain_item.value }}"
+    domain: "{{ domain_item.key }}"
+  when: mail_security_enabled | default(true) | bool
+
+- name: Update DNS records documentation with any new domains
+  ansible.builtin.shell: >
+    cat {{ mailu_base_dir }}/dns/*.dns > {{ mailu_base_dir }}/docs/dns_records.txt
+  args:
+    creates: "{{ mailu_base_dir }}/docs/dns_records.txt"
+  changed_when: false
+  when: mail_security_enabled | default(true) | bool
+
+- name: Display all registered domains
+  ansible.builtin.command: >
+    docker-compose -f {{ mailu_base_dir }}/docker-compose.yml exec -T admin
+    flask mailu domain_list
+  register: domain_list
+  changed_when: false
+
+- name: Show registered domains
+  ansible.builtin.debug:
+    msg: "{{ domain_list.stdout_lines }}"
+
+- name: Ensure Mailu directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "{{ mailu_base_dir }}/data"
+    - "{{ mailu_base_dir }}/certs"
+    - "{{ mailu_base_dir }}/overrides"
+    - "{{ mailu_base_dir }}/crowdsec"
+
+- name: Ensure domains are loaded with correct ownership
+  ansible.builtin.debug:
+    msg: "Processing domain: {{ domain_cfg.domain }}"
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+
+- name: Create domain in Mailu via Admin API
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/domains"
+    method: POST
+    body_format: json
+    body:
+      name: "{{ domain_cfg.domain }}"
+      max_users: -1
+      max_aliases: -1
+      max_quota_bytes: -1
+      comment: "Domain added by Ansible"
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if domain exists
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  register: domain_api_result
+  # Use 'failed_when' to handle specific error conditions
+  failed_when: >
+    domain_api_result.status != 201 and 
+    domain_api_result.status != 200 and
+    domain_api_result.status != 204 and
+    (domain_api_result.status != 400 or 'already exists' not in domain_api_result.json.get('message', ''))
+  # This task requires that the Mailu admin container is running
+  # Consider using 'until' to retry if the container might not be ready yet
+
+- name: Generate DKIM keys for domain
+  ansible.builtin.command:
+    cmd: docker exec mailu_admin flask mailu dkim {{ domain_cfg.domain }}
+  args:
+    creates: "{{ mailu_base_dir }}/data/dkim/{{ domain_cfg.domain }}.dkim.key"
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  register: dkim_gen_result
+  changed_when: dkim_gen_result.rc == 0
+
+- name: Get DKIM key for DNS
+  ansible.builtin.shell: |
+    docker exec mailu_admin cat /data/dkim/{{ domain_cfg.domain }}.dkim.key | grep -v '^-' | tr -d '\n'
+  register: dkim_key_result
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
+  changed_when: false
+  failed_when: dkim_key_result.rc != 0
+  # This will be used by the DNS task module to create TXT records
+
+- name: Update domain fact with DKIM key
+  ansible.builtin.set_fact:
+    domain_dkim_keys: "{{ domain_dkim_keys | default({}) | combine({domain_cfg.domain: dkim_key_result.stdout}) }}"
+  loop: "{{ loaded_domains.results }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"

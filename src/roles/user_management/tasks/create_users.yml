@@ -1,0 +1,53 @@
+---
+# User creation tasks
+
+- name: Create users for domain
+  ansible.builtin.uri:
+    url: "{{ mailu_admin_api_url }}/users"
+    method: POST
+    body_format: json
+    body:
+      localpart: "{{ item.name }}"
+      domain: "{{ domain_cfg.domain }}"
+      password: "{{ lookup('vars', item.password_var) }}"
+      quota_bytes: "{{ item.quota_bytes | default(user_default_quota_bytes) }}"
+      enable_imap: "{{ item.enable_imap | default(true) }}"
+      enable_pop: "{{ item.enable_pop | default(true) }}"
+      comment: "User added by Ansible"
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if user exists
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+  loop: "{{ domain_cfg.users | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}@{{ domain_cfg.domain }}"
+  register: user_api_result
+  failed_when: >
+    user_api_result.status != 201 and 
+    user_api_result.status != 200 and
+    user_api_result.status != 204 and
+    (user_api_result.status != 400 or 'already exists' not in user_api_result.json.get('message', ''))
+
+- name: Create catchall aliases
+  ansible.builtin.uri:
+    url: "{{ mailu_admin_api_url }}/aliases"
+    method: POST
+    body_format: json
+    body:
+      localpart: ""
+      domain: "{{ domain_cfg.domain }}"
+      destination: "{{ item.name }}@{{ domain_cfg.domain }}"
+      wildcard: true
+      comment: "Catchall alias added by Ansible"
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if alias exists
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+  loop: "{{ domain_cfg.users | default([]) }}"
+  loop_control:
+    label: "catchall -> {{ item.name }}@{{ domain_cfg.domain }}"
+  when: item.catchall | default(false)
+  register: catchall_api_result
+  failed_when: >
+    catchall_api_result.status != 201 and 
+    catchall_api_result.status != 200 and
+    catchall_api_result.status != 204 and
+    (catchall_api_result.status != 400 or 'already exists' not in catchall_api_result.json.get('message', ''))

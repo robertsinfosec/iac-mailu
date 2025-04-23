@@ -1,0 +1,100 @@
+---
+# tasks file for managing Mailu users
+
+- name: List existing users for each domain
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/users"
+    method: GET
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+    status_code: 200
+    validate_certs: no
+  register: existing_users
+  failed_when: existing_users.status != 200
+  # This will be used to check if users already exist to avoid duplicates
+
+- name: Create users for each domain
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/users"
+    method: POST
+    body_format: json
+    body:
+      localpart: "{{ user.name }}"
+      domain: "{{ domain_cfg.domain }}"
+      password: "{{ lookup('vars', user.password_var) }}"
+      quota_bytes: "{{ user.quota | default('1000000000') }}"  # Default 1GB if not specified
+      enable_imap: "{{ user.enable_imap | default(true) }}"
+      enable_pop: "{{ user.enable_pop | default(true) }}"
+      allow_spoofing: "{{ user.allow_spoofing | default(false) }}"
+      enabled: true
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if user exists
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+    validate_certs: no
+  loop: "{{ domain_cfg.users }}"
+  loop_control:
+    loop_var: user
+    label: "{{ user.name }}@{{ domain_cfg.domain }}"
+  register: user_creation_results
+  # We'll consider it successful if the user already exists (400 with specific message)
+  failed_when: >
+    user_creation_results.status != 201 and
+    user_creation_results.status != 200 and
+    user_creation_results.status != 204 and
+    (user_creation_results.status != 400 or 'already exists' not in user_creation_results.json.get('message', ''))
+  # We do this for each domain in our configuration
+  loop_control:
+    loop_var: user
+
+- name: Set up catch-all alias if requested
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/aliases"
+    method: POST
+    body_format: json
+    body:
+      localpart: ""  # Empty for catch-all
+      domain: "{{ domain_cfg.domain }}"
+      destination: "{{ user.name }}@{{ domain_cfg.domain }}"
+      comment: "Catch-all alias for {{ domain_cfg.domain }}"
+    status_code: [200, 201, 204, 400]  # 400 is acceptable if alias exists
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+    validate_certs: no
+  loop: "{{ domain_cfg.users }}"
+  loop_control:
+    loop_var: user
+    label: "catchall for {{ domain_cfg.domain }} to {{ user.name }}"
+  when: user.catchall | default(false) | bool
+  register: catchall_creation_results
+  failed_when: >
+    catchall_creation_results.status != 201 and
+    catchall_creation_results.status != 200 and
+    catchall_creation_results.status != 204 and
+    (catchall_creation_results.status != 400 or 'already exists' not in catchall_creation_results.json.get('message', ''))
+
+- name: Update user passwords if changed
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/user/{{ user.name }}@{{ domain_cfg.domain }}"
+    method: PUT
+    body_format: json
+    body:
+      password: "{{ lookup('vars', user.password_var) }}"
+    status_code: [200, 204]
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+    validate_certs: no
+  loop: "{{ domain_cfg.users }}"
+  loop_control:
+    loop_var: user
+    label: "password for {{ user.name }}@{{ domain_cfg.domain }}"
+  register: password_update_results
+  # Only run this if the password is being updated (needs mechanism to track changes)
+  when: user.update_password | default(false) | bool
+  
+- name: Debug user creation results
+  ansible.builtin.debug:
+    msg: "Created user {{ user.name }}@{{ domain_cfg.domain }}"
+  loop: "{{ domain_cfg.users }}"
+  loop_control:
+    loop_var: user
+  when: user_creation_results is changed

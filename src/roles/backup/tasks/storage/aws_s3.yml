@@ -1,0 +1,98 @@
+---
+# Configure AWS S3 for backups
+
+- name: Install AWS CLI
+  ansible.builtin.apt:
+    name: awscli
+    state: present
+  when: backup_aws_enabled | bool
+
+- name: Check if AWS credentials exist
+  ansible.builtin.stat:
+    path: /root/.aws/credentials
+  register: aws_credentials
+  when: backup_aws_enabled | bool
+
+- name: Create AWS CLI config directory if it doesn't exist
+  ansible.builtin.file:
+    path: /root/.aws
+    state: directory
+    mode: '0700'
+  when: 
+    - backup_aws_enabled | bool 
+    - not aws_credentials.stat.exists | default(false)
+
+- name: Configure AWS CLI credentials
+  ansible.builtin.template:
+    src: aws_credentials.j2
+    dest: /root/.aws/credentials
+    mode: '0600'
+  when: 
+    - backup_aws_enabled | bool
+    - not aws_credentials.stat.exists | default(false)
+  no_log: true
+  vars:
+    aws_access_key: "{{ vault_aws_access_key | default('') }}"
+    aws_secret_key: "{{ vault_aws_secret_key | default('') }}"
+
+- name: Configure AWS CLI region
+  ansible.builtin.template:
+    src: aws_config.j2
+    dest: /root/.aws/config
+    mode: '0600'
+  when: backup_aws_enabled | bool
+  vars:
+    aws_region: "{{ backup_aws_region }}"
+
+- name: Check if S3 bucket exists
+  ansible.builtin.shell: |
+    aws s3api head-bucket --bucket {{ backup_aws_bucket }} --region {{ backup_aws_region }} 2>&1
+  register: s3_bucket_check
+  changed_when: false
+  failed_when: false
+  when: backup_aws_enabled | bool
+
+- name: Create S3 bucket if it doesn't exist
+  ansible.builtin.shell: |
+    aws s3 mb s3://{{ backup_aws_bucket }} --region {{ backup_aws_region }}
+  when: 
+    - backup_aws_enabled | bool
+    - s3_bucket_check.rc != 0
+
+- name: Apply lifecycle policy for S3 bucket
+  ansible.builtin.template:
+    src: s3_lifecycle_policy.j2
+    dest: "{{ backup_tmp_dir }}/s3_lifecycle_policy.json"
+    mode: '0644'
+  vars:
+    backup_retention_days: "{{ backup_retention_days }}"
+    prefix: "{{ backup_aws_path }}"
+  when: backup_aws_enabled | bool
+
+- name: Apply lifecycle policy to S3 bucket
+  ansible.builtin.shell: |
+    aws s3api put-bucket-lifecycle-configuration \
+    --bucket {{ backup_aws_bucket }} \
+    --lifecycle-configuration file://{{ backup_tmp_dir }}/s3_lifecycle_policy.json
+  when: 
+    - backup_aws_enabled | bool
+    - s3_bucket_check.rc == 0
+
+- name: Test S3 upload
+  ansible.builtin.copy:
+    content: "S3 upload test from {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}"
+    dest: "{{ backup_tmp_dir }}/s3_test_file"
+    mode: '0644'
+  when: backup_aws_enabled | bool
+
+- name: Upload test file to S3
+  ansible.builtin.shell: |
+    aws s3 cp "{{ backup_tmp_dir }}/s3_test_file" s3://{{ backup_aws_bucket }}/{{ backup_aws_path }}test-file.txt
+  register: s3_upload_test
+  failed_when: false
+  when: backup_aws_enabled | bool
+
+- name: Display S3 test results
+  ansible.builtin.debug:
+    msg: "{{ 'S3 upload successful!' if s3_upload_test.rc == 0 else 'S3 upload failed! Please check your AWS credentials and permissions.' }}"
+  when: backup_aws_enabled | bool

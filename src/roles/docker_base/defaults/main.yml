@@ -1,0 +1,53 @@
+---
+# Default values for docker_base role
+
+# Docker installation method
+docker_install_method: "package"  # Options: package, script
+
+# Docker package names
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-compose-plugin
+
+# Docker service name
+docker_service_name: "docker"
+
+# Docker users (to be added to docker group)
+docker_users:
+  - "{{ ansible_user }}"
+
+# Docker daemon options
+docker_daemon_options:
+  log-driver: "json-file"
+  log-opts:
+    max-size: "100m"
+    max-file: "3"
+  storage-driver: "overlay2"
+  iptables: true
+  live-restore: true
+
+# Docker Compose version
+docker_compose_version: "latest"
+
+# Docker network configuration
+docker_networks:
+  - name: "traefik-public"
+    driver: "bridge"
+    attachable: true
+    ipam_config:
+      - subnet: "172.28.0.0/16"
+        gateway: "172.28.0.1"
+
+# Docker storage directory
+docker_data_dir: "/var/lib/docker"
+
+# Whether to enable Docker system prune cron job
+docker_enable_autoclean: true
+
+# Docker autoclean schedule (cron syntax)
+docker_autoclean_schedule: "0 2 * * 0"  # 2 AM on Sundays
+
+# Docker autoclean options
+docker_autoclean_options: "--all --volumes --force"

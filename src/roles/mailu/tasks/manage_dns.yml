@@ -1,0 +1,164 @@
+---
+# Tasks for managing DNS records for Mailu
+
+- name: Create DNS records directory
+  ansible.builtin.file:
+    path: "{{ mailu_base_dir }}/dns"
+    state: directory
+    mode: '0755'
+
+- name: Load domain configurations
+  include_vars:
+    dir: "{{ playbook_dir }}/../domains"
+    extensions:
+      - yml
+    files_matching: "*.yml"
+    name: loaded_domains
+
+- name: Generate DNS records for each domain
+  ansible.builtin.template:
+    src: "dns_records.j2"
+    dest: "{{ mailu_base_dir }}/dns/{{ domain_item.key }}.dns"
+    mode: '0644'
+  loop: "{{ loaded_domains | dict2items }}"
+  loop_control:
+    loop_var: domain_item
+  vars:
+    domain: "{{ domain_item.key }}"
+    domain_config: "{{ domain_item.value }}"
+    server_ip: "{{ ansible_default_ipv4.address }}"
+  register: dns_files
+
+- name: Combine DNS records into single file
+  ansible.builtin.shell:
+    cmd: cat {{ mailu_base_dir }}/dns/*.dns > {{ mailu_base_dir }}/dns/all_domains.dns
+  args:
+    executable: /bin/bash
+  changed_when: dns_files.changed
+  when: dns_files.changed
+
+- name: Display DNS record instructions
+  debug:
+    msg:
+      - "DNS records have been generated for all domains."
+      - "You can find the complete DNS records at: {{ mailu_base_dir }}/dns/all_domains.dns"
+      - "Individual domain DNS records are in: {{ mailu_base_dir }}/dns/<domain>.dns"
+      - "Please ensure these records are properly configured in your DNS provider."
+
+- name: Ensure Cloudflare Python library is installed
+  ansible.builtin.pip:
+    name: cloudflare
+    state: present
+  delegate_to: localhost # Run pip on the control node where Ansible runs
+  run_once: true # Only need to install it once per playbook run
+
+- name: Get server public IP address
+  ansible.builtin.uri:
+    url: "https://api.ipify.org"
+    return_content: yes
+  register: public_ip_reg
+  delegate_to: localhost # Get the IP from where Ansible runs, assuming it can reach the server
+  run_once: true # Only need to get it once
+
+- name: Set public IP fact
+  ansible.builtin.set_fact:
+    server_public_ip: "{{ public_ip_reg.content }}"
+  when: public_ip_reg.content is defined
+
+- name: Fail if public IP could not be determined
+  ansible.builtin.fail:
+    msg: "Could not determine the server's public IP address."
+  when: server_public_ip is not defined or server_public_ip == ''
+
+- name: Ensure A record for mail hostname exists (e.g., mail.example.com)
+  community.general.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "{{ domain_cfg.hostname | regex_replace('\\.' + domain_cfg.domain + '$', '') }}" # Extract subdomain part
+    type: A
+    value: "{{ server_public_ip }}"
+    proxied: no # Mail records MUST NOT be proxied
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  delegate_to: localhost
+
+- name: Ensure A record for webmail hostname exists (e.g., webmail.example.com)
+  community.general.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "{{ domain_cfg.webmail | regex_replace('\\.' + domain_cfg.domain + '$', '') }}" # Extract subdomain part
+    type: A
+    value: "{{ server_public_ip }}"
+    proxied: yes # Web interfaces CAN be proxied
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  delegate_to: localhost
+
+- name: Ensure A record for admin hostname exists (e.g., admin.example.com)
+  community.general.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "{{ domain_cfg.admin | regex_replace('\\.' + domain_cfg.domain + '$', '') }}" # Extract subdomain part
+    type: A
+    value: "{{ server_public_ip }}"
+    proxied: yes # Web interfaces CAN be proxied
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  delegate_to: localhost
+
+- name: Ensure A record for autoconfig hostname exists (e.g., autoconfig.example.com)
+  community.general.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "autoconfig"
+    type: A
+    value: "{{ server_public_ip }}"
+    proxied: no # Mail autoconfig MUST NOT be proxied
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  delegate_to: localhost
+
+- name: Ensure MX record exists
+  community.general.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "{{ domain_cfg.domain }}" # MX record is for the domain itself
+    type: MX
+    value: "{{ domain_cfg.hostname }}" # Points to the mail hostname
+    priority: 10
+    proxied: no # MX records MUST NOT be proxied
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  delegate_to: localhost
+
+# Implement SPF record
+- name: Ensure SPF record exists (TXT @)
+  community.general.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "{{ domain_cfg.domain }}"
+    type: TXT
+    value: "v=spf1 mx -all" # Standard SPF allowing only the domain's MX server to send mail
+    proxied: no # TXT records MUST NOT be proxied
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  delegate_to: localhost
+
+# Implement DKIM record (using the key generated in manage_domains.yml)
+- name: Ensure DKIM record exists (TXT dkim._domainkey)
+  community.general.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "dkim._domainkey"
+    type: TXT
+    value: "v=DKIM1; k=rsa; p={{ domain_dkim_keys[domain_cfg.domain] }}"
+    proxied: no # TXT records MUST NOT be proxied
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  delegate_to: localhost
+  when: domain_dkim_keys is defined and domain_dkim_keys[domain_cfg.domain] is defined
+
+# Implement DMARC record
+- name: Ensure DMARC record exists (TXT _dmarc)
+  community.general.cloudflare_dns:
+    zone: "{{ domain_cfg.domain }}"
+    record: "_dmarc"
+    type: TXT
+    value: "{{ domain_cfg.dmarc_policy | default(default_dmarc_policy | replace('{{ domain }}', domain_cfg.domain)) }}"
+    proxied: no # TXT records MUST NOT be proxied
+    api_token: "{{ vault_cloudflare_api_token }}"
+    state: present
+  delegate_to: localhost

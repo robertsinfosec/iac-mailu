@@ -1,0 +1,118 @@
+name: Ansible Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/ansible-test.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/ansible-test.yml'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the codebase
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yamllint ansible-lint
+
+      - name: Run yamllint
+        run: |
+          yamllint src/
+
+      - name: Run ansible-lint
+        run: |
+          ansible-lint -v src/
+
+  molecule:
+    name: Molecule
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        role: [mailu, backup]
+    steps:
+      - name: Check out the codebase
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible molecule molecule-docker docker pytest
+
+      - name: Run Molecule tests
+        run: |
+          cd src/roles/${{ matrix.role }}
+          molecule test
+        env:
+          PY_COLORS: '1'
+          ANSIBLE_FORCE_COLOR: '1'
+
+  syntax-check:
+    name: Ansible Syntax Check
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Check out the codebase
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+
+      - name: Ansible syntax check
+        run: |
+          cd src
+          ansible-playbook playbooks/site.yml --syntax-check
+          ansible-playbook playbooks/backup.yml --syntax-check
+          ansible-playbook playbooks/restore.yml --syntax-check
+          ansible-playbook playbooks/health_check.yml --syntax-check
+
+  idempotence:
+    name: Playbook Idempotence
+    runs-on: ubuntu-latest
+    needs: syntax-check
+    steps:
+      - name: Check out the codebase
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible molecule molecule-docker docker pytest
+
+      - name: Run idempotence test on mailu role
+        run: |
+          cd src/roles/mailu
+          molecule idempotence

@@ -1,0 +1,96 @@
+---
+# Default variables for mail security and deliverability role
+
+# General settings
+mail_security_enabled: true
+
+# SPF configuration
+spf_enabled: true
+spf_record: "v=spf1 mx a ip4:{{ ansible_default_ipv4.address }} -all"
+spf_subdomain_policy: "v=spf1 -all"  # Strict policy for subdomains that shouldn't send mail
+
+# DKIM configuration
+dkim_enabled: true
+dkim_selector: "mail"
+dkim_key_size: 2048  # RSA key size (2048 is currently recommended)
+dkim_algorithm: "rsa-sha256"
+
+# DMARC configuration
+dmarc_enabled: true
+dmarc_policy: "quarantine"  # Options: none, quarantine, reject
+dmarc_subdomain_policy: "quarantine"
+dmarc_percentage: 100  # Apply policy to 100% of messages
+dmarc_report_email: "{{ 'postmaster@' + primary_domain }}"
+dmarc_forensic_email: "{{ 'postmaster@' + primary_domain }}"
+dmarc_report_interval: 86400  # 1 day in seconds
+
+# MTA-STS (Mail Transfer Agent Strict Transport Security)
+mta_sts_enabled: true
+mta_sts_mode: "testing"  # Options: testing, enforce, none
+mta_sts_max_age: 604800  # 1 week in seconds
+
+# DANE (DNSSEC) support
+dane_enabled: true
+dane_selector: 3  # DANE-TA
+dane_matching_type: 1  # SHA-256
+
+# TLS-RPT (TLS Reporting)
+tls_rpt_enabled: true
+tls_rpt_email: "{{ 'postmaster@' + primary_domain }}"
+
+# BIMI (Brand Indicators for Message Identification)
+bimi_enabled: false
+bimi_selector: "default"
+bimi_logo_url: ""  # URL to your SVG logo
+bimi_vmcs_url: ""  # Verified Mark Certificate URL (if available)
+
+# SMTP security settings
+smtp_tls_security_level: "may"  # Options: may, encrypt, dane, dane-only, fingerprint, verify, secure
+smtp_tls_policy_maps: []  # List of domains with specific TLS policies
+smtp_helo_restrictions:
+  - "permit_mynetworks"
+  - "permit_sasl_authenticated"
+  - "reject_invalid_helo_hostname"
+  - "reject_non_fqdn_helo_hostname"
+
+# Sender address verification
+sender_verification_enabled: true
+sender_login_maps_enabled: true
+
+# Rate limiting
+rate_limiting_enabled: true
+smtpd_client_message_rate_limit: 100  # Messages per hour per client
+smtpd_client_connection_rate_limit: 30  # Connections per hour per client
+smtpd_client_recipient_rate_limit: 100  # Recipients per hour per client
+smtpd_client_error_rate_limit: 10  # Errors per hour per client
+
+# Email authentication
+smtpd_relay_restrictions:
+  - "permit_mynetworks"
+  - "permit_sasl_authenticated"
+  - "reject_unauth_destination"
+smtpd_sender_restrictions:
+  - "permit_mynetworks"
+  - "permit_sasl_authenticated" 
+  - "reject_unknown_sender_domain"
+  - "reject_non_fqdn_sender"
+smtpd_recipient_restrictions:
+  - "permit_mynetworks"
+  - "permit_sasl_authenticated"
+  - "reject_unknown_recipient_domain"
+  - "reject_non_fqdn_recipient"
+
+# Reverse PTR verification
+ptr_verification_enabled: true
+
+# External blacklists
+rbl_checks_enabled: true
+rbl_lists:
+  - "zen.spamhaus.org"
+  - "bl.spamcop.net"
+
+# SMTP banner
+smtp_banner: "{{ primary_domain }} ESMTP"
+
+# IPv6 support
+ipv6_enabled: true

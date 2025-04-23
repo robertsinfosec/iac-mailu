@@ -1,0 +1,32 @@
+---
+# Handlers for mail security role
+
+- name: Restart Mailu services
+  community.docker.docker_compose:
+    project_src: "{{ mailu_base_dir }}"
+    restarted: true
+  listen: Restart Mailu services
+
+- name: Restart Postfix container
+  community.docker.docker_compose:
+    project_src: "{{ mailu_base_dir }}"
+    services:
+      - smtp
+    restarted: true
+  listen: Restart Postfix container
+
+- name: Restart Dovecot container
+  community.docker.docker_compose:
+    project_src: "{{ mailu_base_dir }}"
+    services:
+      - imap
+    restarted: true
+  listen: Restart Dovecot container
+
+- name: Restart Rspamd container
+  community.docker.docker_compose:
+    project_src: "{{ mailu_base_dir }}"
+    services:
+      - antispam
+    restarted: true
+  listen: Restart Rspamd container

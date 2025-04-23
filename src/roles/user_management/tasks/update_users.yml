@@ -1,0 +1,34 @@
+---
+# User update tasks
+
+- name: Update user passwords if needed
+  ansible.builtin.uri:
+    url: "{{ mailu_admin_api_url }}/user/{{ item.name }}/{{ domain_cfg.domain }}"
+    method: PUT
+    body_format: json
+    body:
+      password: "{{ lookup('vars', item.password_var) }}"
+    status_code: [200, 204]
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+  loop: "{{ domain_cfg.users | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}@{{ domain_cfg.domain }}"
+  when: item.update_password is defined and item.update_password | bool
+  register: user_update_result
+
+- name: Update user quota if specified
+  ansible.builtin.uri:
+    url: "{{ mailu_admin_api_url }}/user/{{ item.name }}/{{ domain_cfg.domain }}"
+    method: PUT
+    body_format: json
+    body:
+      quota_bytes: "{{ item.quota_bytes }}"
+    status_code: [200, 204]
+    headers:
+      X-Admin-Secret: "{{ vault_mailu_admin_secret }}"
+  loop: "{{ domain_cfg.users | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}@{{ domain_cfg.domain }}"
+  when: item.quota_bytes is defined
+  register: quota_update_result

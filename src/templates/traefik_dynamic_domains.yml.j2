@@ -1,0 +1,108 @@
+http:
+  routers:
+    # Define dynamic routers for each domain
+    {% for domain, config in all_domains.items() %}
+    # Routers for {{ domain }}
+    web-{{ domain | replace('.', '-') }}-frontend:
+      rule: "Host(`{{ config.web_frontend_host | default('mail.' + domain) }}`)"
+      entryPoints:
+        - "web"
+      middlewares:
+        - "redirect-to-https"
+      service: "noop@internal"
+
+    websecure-{{ domain | replace('.', '-') }}-frontend:
+      rule: "Host(`{{ config.web_frontend_host | default('mail.' + domain) }}`)"
+      entryPoints:
+        - "websecure"
+      service: "frontend"
+      tls:
+        certResolver: "{{ config.cert_resolver | default('letsencrypt') }}"
+    
+    # SMTP routers if enabled
+    {% if config.smtp_enabled | default(true) %}
+    web-{{ domain | replace('.', '-') }}-smtp:
+      rule: "Host(`{{ config.smtp_host | default('smtp.' + domain) }}`)"
+      entryPoints:
+        - "web"
+      middlewares:
+        - "redirect-to-https"
+      service: "noop@internal"
+
+    websecure-{{ domain | replace('.', '-') }}-smtp:
+      rule: "Host(`{{ config.smtp_host | default('smtp.' + domain) }}`)"
+      entryPoints:
+        - "websecure"
+      service: "smtp"
+      tls:
+        certResolver: "{{ config.cert_resolver | default('letsencrypt') }}"
+    {% endif %}
+
+    # IMAP/POP3 routers if enabled
+    {% if config.imap_enabled | default(true) %}
+    web-{{ domain | replace('.', '-') }}-imap:
+      rule: "Host(`{{ config.imap_host | default('imap.' + domain) }}`)"
+      entryPoints:
+        - "web"
+      middlewares:
+        - "redirect-to-https"
+      service: "noop@internal"
+
+    websecure-{{ domain | replace('.', '-') }}-imap:
+      rule: "Host(`{{ config.imap_host | default('imap.' + domain) }}`)"
+      entryPoints:
+        - "websecure"
+      service: "imap"
+      tls:
+        certResolver: "{{ config.cert_resolver | default('letsencrypt') }}"
+    {% endif %}
+    
+    # Webmail routers if enabled
+    {% if config.webmail_enabled | default(true) %}
+    web-{{ domain | replace('.', '-') }}-webmail:
+      rule: "Host(`{{ config.webmail_host | default('webmail.' + domain) }}`)"
+      entryPoints:
+        - "web"
+      middlewares:
+        - "redirect-to-https"
+      service: "noop@internal"
+
+    websecure-{{ domain | replace('.', '-') }}-webmail:
+      rule: "Host(`{{ config.webmail_host | default('webmail.' + domain) }}`)"
+      entryPoints:
+        - "websecure"
+      service: "webmail"
+      tls:
+        certResolver: "{{ config.cert_resolver | default('letsencrypt') }}"
+    {% endif %}
+    {% endfor %}
+
+  services:
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://front:80"
+    smtp:
+      loadBalancer:
+        servers:
+          - url: "http://smtp:80"
+    imap:
+      loadBalancer:
+        servers:
+          - url: "http://imap:143"
+    webmail:
+      loadBalancer:
+        servers:
+          - url: "http://webmail:80"
+
+  middlewares:
+    secure-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "same-origin"
+        frameDeny: true
+        customFrameOptionsValue: "SAMEORIGIN"

@@ -1,0 +1,33 @@
+---
+# Traefik role defaults
+
+# Basic Traefik settings
+traefik_enabled: true
+traefik_config_dir: "/etc/traefik"
+traefik_image: "traefik"
+traefik_version: "v2.10"
+traefik_pull_image: true
+traefik_network_name: "traefik"
+
+# TLS settings
+traefik_enable_tls: true
+traefik_acme_email: "admin@{{ primary_domain | default('example.com') }}"
+traefik_acme_challenge_type: "tls-alpn-01"  # or "http-01"
+traefik_acme_staging: false
+traefik_default_cert_resolver: "letsencrypt"
+
+# Logging settings
+traefik_log_level: "INFO"  # DEBUG, INFO, WARN, ERROR, FATAL
+traefik_access_logs: true
+
+# API & Dashboard settings
+traefik_api_enabled: true
+traefik_dashboard_enabled: true
+traefik_dashboard_host: "traefik.{{ primary_domain | default('example.com') }}"
+traefik_dashboard_username: "admin"
+traefik_dashboard_hashed_password: "{{ vault_traefik_dashboard_password_hash | default('$apr1$H6uskkkW$IgXLP6ewTrSuBkTrqE8wj/') }}"  # Default: 'admin'
+
+# Middleware settings
+traefik_default_middlewares:
+  - "secure-headers@file"
+  - "gzip@file"

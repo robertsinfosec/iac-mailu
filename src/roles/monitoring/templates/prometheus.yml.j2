@@ -1,0 +1,114 @@
+---
+global:
+  scrape_interval: {{ prometheus_scrape_interval }}
+  evaluation_interval: {{ prometheus_evaluation_interval }}
+
+rule_files:
+  - alert_rules.yml
+  - recording_rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  # System monitoring
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:{{ node_exporter_port }}']
+        labels:
+          instance: '{{ inventory_hostname }}'
+
+  # Mailu component monitoring
+  - job_name: 'postfix'
+    static_configs:
+      - targets: ['{{ inventory_hostname }}:{{ postfix_exporter_port }}']
+        labels:
+          component: 'smtp'
+
+  - job_name: 'dovecot'
+    static_configs:
+      - targets: ['{{ inventory_hostname }}:{{ dovecot_exporter_port }}']
+        labels:
+          component: 'imap'
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['{{ inventory_hostname }}:{{ redis_exporter_port }}']
+        labels:
+          component: 'redis'
+
+  # Monitor Docker containers via cadvisor
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # Self-monitor Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Monitor Loki
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+  
+  # Blackbox checks (endpoint monitoring)
+  - job_name: 'blackbox_http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]  # Use the http_2xx module defined in blackbox.yml
+    static_configs:
+      - targets:
+{% for domain_item in loaded_domains.results %}
+{% set domain_cfg = domain_item.ansible_facts.domain_config %}
+        - https://{{ domain_cfg.webmail }}
+        - https://{{ domain_cfg.admin }}
+{% endfor %}
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # SMTP check
+  - job_name: 'blackbox_smtp'
+    metrics_path: /probe
+    params:
+      module: [smtp_starttls]
+    static_configs:
+      - targets:
+{% for domain_item in loaded_domains.results %}
+{% set domain_cfg = domain_item.ansible_facts.domain_config %}
+        - {{ domain_cfg.hostname }}:25
+{% endfor %}
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # IMAP check
+  - job_name: 'blackbox_imap'
+    metrics_path: /probe
+    params:
+      module: [imap_starttls]
+    static_configs:
+      - targets:
+{% for domain_item in loaded_domains.results %}
+{% set domain_cfg = domain_item.ansible_facts.domain_config %}
+        - {{ domain_cfg.hostname }}:143
+{% endfor %}
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

@@ -1,0 +1,92 @@
+---
+# Health check tasks for Mailu services
+
+- name: Check if Docker is running
+  ansible.builtin.service:
+    name: docker
+    state: started
+  register: docker_status
+  check_mode: yes
+  changed_when: false
+  failed_when: docker_status.status.ActiveState != 'active'
+
+- name: Get status of running containers
+  community.docker.docker_container_info:
+    name: "{{ item }}"
+  register: container_status
+  loop:
+    - traefik
+    - mailu_admin
+    - mailu_front
+    - mailu_imap
+    - mailu_smtp
+    - mailu_antispam
+    - mailu_antivirus
+    - mailu_webmail
+    - mailu_redis
+  ignore_errors: yes
+  failed_when: false
+
+- name: Check if containers are running
+  ansible.builtin.set_fact:
+    failed_containers: "{{ container_status.results | selectattr('container', 'defined') | selectattr('container.State.Status', 'ne', 'running') | map(attribute='item') | list }}"
+    missing_containers: "{{ container_status.results | rejectattr('container', 'defined') | map(attribute='item') | list }}"
+
+- name: Create health status report
+  ansible.builtin.set_fact:
+    health_status: "{% if (failed_containers|length > 0) or (missing_containers|length > 0) %}DOWN{% else %}UP{% endif %}"
+    health_message: |
+      Mailu Health Check Report:
+      Status: {% if (failed_containers|length > 0) or (missing_containers|length > 0) %}DOWN{% else %}UP{% endif %}
+      Host: {{ inventory_hostname }}
+      Time: {{ ansible_date_time.iso8601 }}
+      {% if failed_containers|length > 0 %}
+      Failed containers: {{ failed_containers | join(', ') }}
+      {% endif %}
+      {% if missing_containers|length > 0 %}
+      Missing containers: {{ missing_containers | join(', ') }}
+      {% endif %}
+
+- name: Display health status report
+  ansible.builtin.debug:
+    msg: "{{ health_message }}"
+
+- name: Check mailbox services
+  ansible.builtin.uri:
+    url: "https://{{ domain_cfg.hostname }}/health"
+    validate_certs: yes
+    status_code: 200
+  register: health_check_result
+  failed_when: false
+  when: health_status == "UP"
+
+- name: Update health report with service check results
+  ansible.builtin.set_fact:
+    health_status: "{% if health_check_result.status != 200 %}DOWN{% else %}{{ health_status }}{% endif %}"
+    health_message: "{{ health_message }}\nService health check: {% if health_check_result.status == 200 %}Passed{% else %}Failed (Status: {{ health_check_result.status | default('Unreachable') }}){% endif %}"
+  when: health_check_result is defined
+
+- name: Send notification if health check fails and notifications are enabled
+  ansible.builtin.uri:
+    url: "{{ ntfy_url | default('https://ntfy.sh') }}/{{ ntfy_topic }}"
+    method: POST
+    headers:
+      Title: "Mailu Health Alert: {{ inventory_hostname }}"
+      Priority: "{% if health_status == 'DOWN' %}5{% else %}1{% endif %}"
+      Tags: "{% if health_status == 'DOWN' %}warning,email,server-down{% else %}check,email,server-up{% endif %}"
+    body: "{{ health_message }}"
+    status_code: 200
+  when: 
+    - ntfy_enabled | default(false) | bool
+    - ntfy_topic is defined
+    - (health_status == "DOWN") or (ntfy_send_success | default(false) | bool)
+  register: notification_result
+  failed_when: false
+
+- name: Alert on notification failure
+  ansible.builtin.debug:
+    msg: "Failed to send notification: {{ notification_result }}"
+  when: 
+    - ntfy_enabled | default(false) | bool
+    - notification_result is defined
+    - notification_result.status != 200

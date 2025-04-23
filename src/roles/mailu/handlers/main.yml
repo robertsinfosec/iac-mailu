@@ -1,0 +1,16 @@
+---
+# Handlers for Mailu role
+
+- name: Restart Traefik container
+  community.docker.docker_container:
+    name: traefik
+    state: started
+    restart: yes
+  listen: "Restart Traefik container"
+
+- name: Restart Mailu stack
+  community.docker.docker_compose:
+    project_src: "{{ mailu_base_dir }}"
+    state: present
+    restarted: yes
+  listen: "restart mailu"

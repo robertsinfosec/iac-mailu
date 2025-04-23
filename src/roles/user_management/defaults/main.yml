@@ -1,0 +1,28 @@
+---
+# User Management role defaults
+
+# Debug mode for verbose output
+user_debug: false
+
+# Domain configuration directory
+domain_config_dir: "{{ playbook_dir }}/../domains"
+
+# Default quota for users (1GB)
+user_default_quota_bytes: 1073741824
+
+# Mailu admin API settings
+mailu_admin_api_url: "http://localhost:8080/admin/api/v1"
+
+# Base directory for mail server
+mailu_base_dir: "/opt/mailu"
+
+# Default user settings
+default_user_quota_bytes: 1073741824  # 1 GB
+default_user_enable_imap: true
+default_user_enable_pop: true
+default_user_enable_webmail: true
+default_user_spam_enabled: true
+default_user_spam_threshold: 80
+
+# Whether to create catchall aliases for domains
+enable_catchall: true

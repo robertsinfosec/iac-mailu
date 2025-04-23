@@ -1,0 +1,109 @@
+---
+# Tasks for generating recommended DNS records for mail security
+
+- name: Create directory for DNS records if it doesn't exist
+  ansible.builtin.file:
+    path: "{{ mailu_base_dir }}/dns"
+    state: directory
+    mode: '0755'
+  run_once: true
+
+# SPF record
+- name: Generate SPF record for domain
+  ansible.builtin.set_fact:
+    spf_txt_record: "{{ spf_record }}"
+  when: spf_enabled | bool
+
+- name: Add SPF record to recommended DNS records
+  ansible.builtin.lineinfile:
+    path: "{{ mailu_base_dir }}/dns/{{ domain }}.dns"
+    line: "{{ domain }}. IN TXT \"{{ spf_txt_record }}\""
+    create: yes
+    mode: '0644'
+  when: spf_enabled | bool
+
+# DMARC record
+- name: Generate DMARC record for domain
+  ansible.builtin.set_fact:
+    dmarc_txt_record: "v=DMARC1; p={{ dmarc_policy }}; sp={{ dmarc_subdomain_policy }}; pct={{ dmarc_percentage }}; ri={{ dmarc_report_interval }}; rua=mailto:{{ dmarc_report_email }}; ruf=mailto:{{ dmarc_forensic_email }}"
+  when: dmarc_enabled | bool
+
+- name: Add DMARC record to recommended DNS records
+  ansible.builtin.lineinfile:
+    path: "{{ mailu_base_dir }}/dns/{{ domain }}.dns"
+    line: "_dmarc.{{ domain }}. IN TXT \"{{ dmarc_txt_record }}\""
+    create: yes
+    mode: '0644'
+  when: dmarc_enabled | bool
+
+# MTA-STS record
+- name: Generate MTA-STS record for domain
+  ansible.builtin.set_fact:
+    mta_sts_txt_record: "v=STSv1; id={{ ansible_date_time.epoch }}"
+  when: mta_sts_enabled | bool
+
+- name: Add MTA-STS record to recommended DNS records
+  ansible.builtin.lineinfile:
+    path: "{{ mailu_base_dir }}/dns/{{ domain }}.dns"
+    line: "_mta-sts.{{ domain }}. IN TXT \"{{ mta_sts_txt_record }}\""
+    create: yes
+    mode: '0644'
+  when: mta_sts_enabled | bool
+
+# TLS-RPT record
+- name: Generate TLS-RPT record for domain
+  ansible.builtin.set_fact:
+    tls_rpt_txt_record: "v=TLSRPTv1; rua=mailto:{{ tls_rpt_email }}"
+  when: tls_rpt_enabled | bool
+
+- name: Add TLS-RPT record to recommended DNS records
+  ansible.builtin.lineinfile:
+    path: "{{ mailu_base_dir }}/dns/{{ domain }}.dns"
+    line: "_smtp._tls.{{ domain }}. IN TXT \"{{ tls_rpt_txt_record }}\""
+    create: yes
+    mode: '0644'
+  when: tls_rpt_enabled | bool
+
+# BIMI record
+- name: Generate BIMI record for domain
+  ansible.builtin.set_fact:
+    bimi_txt_record: "v=BIMI1; l={{ bimi_logo_url }}{{ '; a=' + bimi_vmcs_url if bimi_vmcs_url else '' }}"
+  when: bimi_enabled | bool and bimi_logo_url | length > 0
+
+- name: Add BIMI record to recommended DNS records
+  ansible.builtin.lineinfile:
+    path: "{{ mailu_base_dir }}/dns/{{ domain }}.dns"
+    line: "{{ bimi_selector }}._bimi.{{ domain }}. IN TXT \"{{ bimi_txt_record }}\""
+    create: yes
+    mode: '0644'
+  when: bimi_enabled | bool and bimi_logo_url | length > 0
+
+# Get DKIM public key for the domain
+- name: Get DKIM public key for domain
+  ansible.builtin.command: "cat {{ mailu_base_dir }}/dkim/{{ domain }}.{{ dkim_selector }}.txt"
+  register: dkim_pub_key
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# Add DKIM record based on the retrieved key
+- name: Add DKIM record to recommended DNS records
+  ansible.builtin.lineinfile:
+    path: "{{ mailu_base_dir }}/dns/{{ domain }}.dns"
+    line: "{{ dkim_selector }}._domainkey.{{ domain }}. IN TXT \"{{ dkim_pub_key.stdout }}\""
+    create: yes
+    mode: '0644'
+  when: dkim_enabled | bool and dkim_pub_key.rc == 0 and dkim_pub_key.stdout | length > 0
+
+# List generated DNS records
+- name: List generated DNS records for the domain
+  ansible.builtin.command: "cat {{ mailu_base_dir }}/dns/{{ domain }}.dns"
+  register: dns_records
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Display recommended DNS records
+  ansible.builtin.debug:
+    msg: "Recommended DNS records for {{ domain }}:\n{{ dns_records.stdout }}"
+  when: dns_records.rc == 0

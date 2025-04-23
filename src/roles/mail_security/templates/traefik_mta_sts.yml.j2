@@ -1,0 +1,35 @@
+http:
+  routers:
+{% for domain_item in loaded_domains.results %}
+{% set domain_cfg = domain_item.ansible_facts.domain_config %}
+{% set domain = domain_cfg.domain %}
+    mta-sts-{{ domain | replace('.', '-') }}:
+      rule: "Host(`mta-sts.{{ domain }}`)"
+      entryPoints:
+        - "https"
+      middlewares:
+        - "mta-sts-strip-{{ domain | replace('.', '-') }}"
+      service: "mta-sts-{{ domain | replace('.', '-') }}"
+      tls:
+        certResolver: "{{ cert_resolver | default('letsencrypt') }}"
+{% endfor %}
+
+  middlewares:
+{% for domain_item in loaded_domains.results %}
+{% set domain = domain_item.ansible_facts.domain_config.domain %}
+    mta-sts-strip-{{ domain | replace('.', '-') }}:
+      stripPrefix:
+        prefixes:
+          - "/.well-known/mta-sts"
+        forceSlash: false
+{% endfor %}
+
+  services:
+{% for domain_item in loaded_domains.results %}
+{% set domain_cfg = domain_item.ansible_facts.domain_config %}
+{% set domain = domain_cfg.domain %}
+    mta-sts-{{ domain | replace('.', '-') }}:
+      loadBalancer:
+        servers:
+          - url: "file:///mta-sts/{{ domain }}/.well-known/mta-sts/"
+{% endfor %}

@@ -1,0 +1,81 @@
+---
+# Main tasks for Mailu role - now focused only on Mailu core setup
+
+- name: Ensure base Mailu directory exists
+  ansible.builtin.file:
+    path: "{{ mailu_base_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Ensure Mailu data directories exist
+  ansible.builtin.file:
+    path: "{{ mailu_base_dir }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "data"
+    - "dkim"
+    - "certs"
+    - "overrides"
+
+# Generate configuration files based on templates
+- name: Generate Mailu .env file
+  ansible.builtin.template:
+    src: "mailu_env.j2"
+    dest: "{{ mailu_base_dir }}/.env"
+    mode: '0640' # Restrict permissions
+  notify: Restart Mailu stack
+
+- name: Generate docker-compose.yml
+  ansible.builtin.template:
+    src: "docker-compose.yml.j2"
+    dest: "{{ mailu_base_dir }}/docker-compose.yml"
+    mode: '0644'
+  notify: Restart Mailu stack
+
+# Ensure the Docker network exists
+- name: Ensure Docker network exists
+  community.docker.docker_network:
+    name: "{{ mailu_docker_network }}"
+    state: present
+
+# Pull images before deploying to minimize downtime
+- name: Pull Docker images
+  community.docker.docker_image:
+    name: "{{ item }}"
+    source: pull
+    force_source: yes
+  loop:
+    - "{{ mailu_registry }}/{{ mailu_image_prefix }}admin:{{ mailu_version }}"
+    - "{{ mailu_registry }}/{{ mailu_image_prefix }}front:{{ mailu_version }}"
+    - "{{ mailu_registry }}/{{ mailu_image_prefix }}imap:{{ mailu_version }}"
+    - "{{ mailu_registry }}/{{ mailu_image_prefix }}smtp:{{ mailu_version }}"
+    - "{{ mailu_registry }}/{{ mailu_image_prefix }}antispam:{{ mailu_version }}"
+    - "{{ mailu_registry }}/{{ mailu_image_prefix }}webmail:{{ mailu_version }}"
+  when: mailu_pull_images | bool
+
+# Deploy the Mailu stack
+- name: Deploy Mailu stack using docker-compose
+  community.docker.docker_compose:
+    project_src: "{{ mailu_base_dir }}"
+    state: present
+    pull: yes
+    remove_orphans: yes
+  register: deployment_result
+
+- name: Debug deployment result
+  ansible.builtin.debug: 
+    var: deployment_result
+  when: mailu_debug | default(false) | bool
+
+# Wait for Mailu services to be ready
+- name: Wait for Mailu admin API to become available
+  ansible.builtin.uri:
+    url: "http://localhost:8080/admin/api/v1/status"
+    status_code: 200
+  register: api_status
+  until: api_status.status == 200
+  retries: 60
+  delay: 5
+  changed_when: false
+  failed_when: false

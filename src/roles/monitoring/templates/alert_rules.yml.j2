@@ -1,0 +1,121 @@
+groups:
+- name: mailu_alerts
+  rules:
+  # System-level alerts
+  - alert: HighCPULoad
+    expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU load on {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "CPU load is above 80% for 5 minutes (current value: {{ "{{" }} $value {{ "}}" }}%)"
+
+  - alert: HighMemoryUsage
+    expr: (node_memory_MemTotal_bytes - (node_memory_MemFree_bytes + node_memory_Buffers_bytes + node_memory_Cached_bytes)) / node_memory_MemTotal_bytes * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory usage on {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "Memory usage is above 85% for 5 minutes (current value: {{ "{{" }} $value {{ "}}" }}%)"
+
+  - alert: LowDiskSpace
+    expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) < 15
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low disk space on {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "Disk space is below 15% (current value: {{ "{{" }} $value {{ "}}" }}%)"
+
+  - alert: CriticalDiskSpace
+    expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) < 5
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical disk space on {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "Disk space is below 5% (current value: {{ "{{" }} $value {{ "}}" }}%)"
+
+  # Mailu-specific alerts
+  - alert: MailuServiceDown
+    expr: up{job=~"postfix|dovecot|redis"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Mailu service down: {{ "{{" }} $labels.job {{ "}}" }}"
+      description: "{{ "{{" }} $labels.job {{ "}}" }} service is down on {{ "{{" }} $labels.instance {{ "}}" }}"
+
+  - alert: SMTPEndpointDown
+    expr: probe_success{job="blackbox_smtp"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "SMTP endpoint down: {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "SMTP endpoint is not responding (check if port 25 is accessible)"
+
+  - alert: IMAPEndpointDown
+    expr: probe_success{job="blackbox_imap"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "IMAP endpoint down: {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "IMAP endpoint is not responding (check if port 143 is accessible)"
+
+  - alert: WebmailDown
+    expr: probe_success{job="blackbox_http", instance=~".*webmail.*"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Webmail is down: {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "Webmail endpoint is not responding with HTTP 200"
+      
+  - alert: AdminInterfaceDown
+    expr: probe_success{job="blackbox_http", instance=~".*admin.*"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Admin interface is down: {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "Admin interface endpoint is not responding with HTTP 200"
+
+  - alert: MailQueueGrowing
+    expr: increase(postfix_queued_messages[15m]) > 50
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Mail queue is growing on {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "Mail queue has increased by more than 50 messages in the last 15 minutes (current increase: {{ "{{" }} $value {{ "}}" }})"
+
+  - alert: HighMailRejectionRate
+    expr: increase(postfix_smtpd_rejects_total[15m]) / (increase(postfix_smtpd_connects_total[15m]) + 1) > 0.25
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High mail rejection rate on {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "Mail rejection rate is above 25% (current value: {{ "{{" }} $value | humanizePercentage {{ "}}" }})"
+
+  - alert: MailDeliveryLatency
+    expr: postfix_delivery_delay_seconds{quantile="0.95"} > 120
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Mail delivery delays on {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "95% of mails are taking more than 2 minutes to deliver (current value: {{ "{{" }} $value | humanizeDuration {{ "}}" }})"
+
+  - alert: SSLCertificateExpiringSoon
+    expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 14
+    for: 1h
+    labels:
+      severity: warning
+    annotations:
+      summary: "SSL Certificate expiring soon: {{ "{{" }} $labels.instance {{ "}}" }}"
+      description: "SSL certificate will expire in less than 14 days (expiring on: {{ "{{" }} $value | humanizeTimestamp {{ "}}" }})"

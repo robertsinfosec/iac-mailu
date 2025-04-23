@@ -1,0 +1,23 @@
+---
+# Domain Management role defaults
+
+# Debug mode for verbose output
+domain_management_debug: false
+
+# Domain configuration directory
+domain_config_dir: "{{ playbook_dir }}/../domains"
+
+# Base directory for mail server
+mailu_base_dir: "/opt/mailu"
+
+# Default domain quotas and limits
+domain_max_users: 10
+domain_max_aliases: 10
+domain_max_quota_bytes: 1073741824  # 1GB
+
+# DKIM settings
+dkim_enabled: true
+dkim_selector: "mail"
+
+# Default DMARC policy
+default_dmarc_policy: "v=DMARC1; p=none; rua=mailto:postmaster@{{ domain }}"

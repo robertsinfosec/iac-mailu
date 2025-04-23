@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""
+Mailu Health Check Script
+This script performs health checks on various services of the Mailu mail server.
+"""
+
+import socket
+import time
+import sys
+import json
+import os
+import subprocess
+import requests
+import datetime
+from urllib.parse import urlparse
+{% if health_check_notify_enabled %}
+import importlib.util
+{% endif %}
+
+# Configuration
+DEBUG = {{ health_check_debug | lower }}
+CHECK_SERVICES = {{ health_check_services | to_json }}
+PRIMARY_DOMAIN = "{{ primary_domain | default('example.com') }}"
+HOSTNAME = "{{ ansible_hostname }}"
+{% if health_check_notify_enabled %}
+NOTIFY_METHOD = "{{ health_check_notify_method }}"
+NOTIFY_EMAIL = "{{ health_check_notify_email }}"
+{% endif %}
+
+class HealthCheck:
+    def __init__(self):
+        self.results = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "hostname": HOSTNAME,
+            "status": "healthy",
+            "services": {},
+            "details": {}
+        }
+        self.failure_count = 0
+        
+    def check_tcp_service(self, service):
+        """Check if a TCP service is available."""
+        name = service.get("name", "unknown")
+        host = service.get("host", "localhost")
+        port = service.get("port", 25)
+        timeout = service.get("timeout", 10)
+        
+        start_time = time.time()
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            response_time = time.time() - start_time
+            
+            if result == 0:
+                status = "healthy"
+                message = f"Service {name} is available on port {port} (response time: {response_time:.2f}s)"
+            else:
+                status = "unhealthy"
+                message = f"Service {name} is not available on port {port} (error code: {result})"
+                self.failure_count += 1
+                
+            sock.close()
+            
+        except Exception as e:
+            status = "unhealthy"
+            message = f"Error connecting to {name} on port {port}: {str(e)}"
+            response_time = time.time() - start_time
+            self.failure_count += 1
+            
+        self.results["services"][name] = {
+            "status": status,
+            "response_time": f"{response_time:.2f}s",
+            "message": message
+        }
+        
+        if DEBUG:
+            print(message)
+    
+    def check_http_service(self, service):
+        """Check if an HTTP service is available."""
+        name = service.get("name", "unknown")
+        host = service.get("host", "localhost")
+        port = service.get("port", 80)
+        path = service.get("path", "/")
+        timeout = service.get("timeout", 10)
+        expected_code = service.get("status_code", 200)
+        protocol = service.get("protocol", "https")
+        
+        url = f"{protocol}://{host}:{port}{path}"
+        
+        start_time = time.time()
+        try:
+            response = requests.get(url, timeout=timeout, verify=False)
+            response_time = time.time() - start_time
+            
+            if response.status_code == expected_code:
+                status = "healthy"
+                message = f"Service {name} is available at {url} (response time: {response_time:.2f}s)"
+            else:
+                status = "unhealthy"
+                message = f"Service {name} returned unexpected status code: {response.status_code} (expected {expected_code})"
+                self.failure_count += 1
+                
+        except requests.exceptions.RequestException as e:
+            status = "unhealthy"
+            message = f"Error connecting to {name} at {url}: {str(e)}"
+            response_time = time.time() - start_time
+            self.failure_count += 1
+            
+        self.results["services"][name] = {
+            "status": status,
+            "response_time": f"{response_time:.2f}s",
+            "message": message
+        }
+        
+        if DEBUG:
+            print(message)
+            
+    def check_service(self, service):
+        """Check a service based on its type."""
+        service_type = service.get("type", "tcp")
+        
+        if service_type == "tcp":
+            self.check_tcp_service(service)
+        elif service_type == "http":
+            self.check_http_service(service)
+        else:
+            print(f"Unknown service type: {service_type}")
+            
+    def run_checks(self):
+        """Run all health checks."""
+        print(f"Running health checks at {self.results['timestamp']}")
+        
+        # Check all services
+        for service in CHECK_SERVICES:
+            self.check_service(service)
+            
+        # Update overall status
+        if self.failure_count > 0:
+            self.results["status"] = "unhealthy"
+            
+        # Print summary
+        print(f"Health check completed. Status: {self.results['status']}")
+        print(f"Services checked: {len(CHECK_SERVICES)}")
+        print(f"Failures detected: {self.failure_count}")
+        
+        return self.results
+        
+    def notify_if_failures(self):
+        """Send notification if failures were detected."""
+        if self.failure_count > 0 and "{{ health_check_notify_enabled | lower }}" == "true":
+            try:
+                # Import notification module
+                notify_module = importlib.import_module("notify")
+                notify = notify_module.Notifier()
+                
+                # Prepare notification data
+                subject = f"Health Check Alert - {self.results['status']} - {HOSTNAME}"
+                message = f"Health check failures detected on {HOSTNAME} at {self.results['timestamp']}.\n\n"
+                
+                for service_name, service_data in self.results["services"].items():
+                    if service_data["status"] == "unhealthy":
+                        message += f"- {service_name}: {service_data['message']}\n"
+                
+                # Send notification
+                notify.send(subject, message)
+                print(f"Notification sent via {NOTIFY_METHOD}")
+                
+            except Exception as e:
+                print(f"Failed to send notification: {str(e)}")
+                
+if __name__ == "__main__":
+    checker = HealthCheck()
+    results = checker.run_checks()
+    
+    # Save results to JSON file
+    with open("health_check_results.json", "w") as f:
+        json.dump(results, f, indent=2)
+    
+    # Notify if there are failures
+    checker.notify_if_failures()
+    
+    # Exit with error code if failures detected
+    sys.exit(1 if checker.failure_count > 0 else 0)

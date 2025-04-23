@@ -1,0 +1,43 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  tasks:
+    # Create mock Ansible facts and structures for testing
+    - name: Create mock domain configurations
+      ansible.builtin.set_fact:
+        loaded_domains:
+          results:
+            - ansible_facts:
+                domain_config:
+                  domain: "example.com"
+                  hostname: "mail.example.com"
+                  webmail: "webmail.example.com"
+                  admin: "admin.example.com"
+
+    - name: Create primary domain fact
+      ansible.builtin.set_fact:
+        primary_domain: "{{ loaded_domains.results[0].ansible_facts.domain_config.domain }}"
+
+    - name: Create directory structure for testing
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ mailu_base_dir }}"
+        - "{{ traefik_config_dir }}"
+        - "/root/.config"
+
+    - name: Create mock .env file
+      ansible.builtin.copy:
+        content: |
+          # Mock Mailu .env file for testing
+          DOMAIN=example.com
+          HOSTNAMES=mail.example.com
+          SECRET_KEY=testingkey123456
+        dest: "{{ mailu_base_dir }}/.env"
+        mode: '0640'
+
+  roles:
+    - role: mailu

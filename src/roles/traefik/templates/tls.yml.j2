@@ -1,0 +1,36 @@
+---
+# TLS configuration for Traefik
+
+tls:
+  options:
+    default:
+      minVersion: "VersionTLS12"
+      {% if traefik_ssl_options == "modern" %}
+      # Modern compatibility (Firefox 63+, Android 10.0+, Chrome 70+, Edge 75+, Safari 12.1+)
+      sniStrict: true
+      cipherSuites:
+        - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305"
+        - "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
+      {% elif traefik_ssl_options == "intermediate" %}
+      # Intermediate compatibility (Firefox 27+, Android 4.4.2+, Chrome 31+, Edge, IE 11+, Safari 9+)
+      sniStrict: true
+      cipherSuites:
+        - "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+        - "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+        - "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305"
+        - "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"
+        - "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"
+        - "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"
+        - "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
+        - "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
+      {% elif traefik_ssl_options == "old" %}
+      # Old backward compatibility (Firefox 1+, Android 2.3+, Chrome 1+, IE 7+, Safari 1+)
+      minVersion: "VersionTLS10"
+      sniStrict: false
+      {% endif %}

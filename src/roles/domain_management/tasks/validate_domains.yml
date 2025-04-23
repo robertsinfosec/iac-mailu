@@ -1,0 +1,40 @@
+---
+# Domain validation tasks
+
+- name: Validate required domain configuration fields
+  ansible.builtin.assert:
+    that:
+      - domain_cfg.domain is defined
+      - domain_cfg.hostname is defined
+      - domain_cfg.webmail is defined
+      - domain_cfg.admin is defined
+    fail_msg: "Domain configuration for {{ domain_cfg.domain | default('unknown') }} is missing required fields: domain, hostname, webmail, admin"
+    success_msg: "Domain configuration for {{ domain_cfg.domain }} is valid"
+
+- name: Validate domain hostname format
+  ansible.builtin.assert:
+    that:
+      - domain_cfg.hostname is match("^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$") 
+      - domain_cfg.webmail is match("^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$")
+      - domain_cfg.admin is match("^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$")
+    fail_msg: "Invalid hostname format for domain {{ domain_cfg.domain }}"
+    
+- name: Validate users configuration
+  ansible.builtin.assert:
+    that:
+      - domain_cfg.users | default([]) is iterable
+      - item.name is defined
+      - item.password_var is defined
+    fail_msg: "User configuration for {{ item.name | default('unknown') }} in domain {{ domain_cfg.domain }} is invalid"
+  loop: "{{ domain_cfg.users | default([]) }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+
+- name: Validate vault variables for each user
+  ansible.builtin.assert:
+    that:
+      - lookup('vars', item.password_var, default=None) is not none
+    fail_msg: "Vault variable {{ item.password_var }} for user {{ item.name }} in domain {{ domain_cfg.domain }} is not defined"
+  loop: "{{ domain_cfg.users | default([]) }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"

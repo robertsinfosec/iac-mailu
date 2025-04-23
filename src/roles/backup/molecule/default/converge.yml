@@ -1,0 +1,60 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  tasks:
+    # Create mock Ansible facts and structures for testing
+    - name: Create mock domain configurations
+      ansible.builtin.set_fact:
+        loaded_domains:
+          results:
+            - ansible_facts:
+                domain_config:
+                  domain: "example.com"
+                  hostname: "mail.example.com"
+                  webmail: "webmail.example.com"
+                  admin: "admin.example.com"
+
+    - name: Create primary domain fact
+      ansible.builtin.set_fact:
+        primary_domain: "{{ loaded_domains.results[0].ansible_facts.domain_config.domain }}"
+        traefik_config_dir: "/opt/traefik/config"
+
+    - name: Create directory structure for testing
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ mailu_base_dir }}"
+        - "{{ mailu_base_dir }}/data"
+        - "{{ mailu_base_dir }}/mail"
+        - "{{ mailu_base_dir }}/dkim"
+        - "{{ traefik_config_dir }}"
+
+    - name: Create mock .env file
+      ansible.builtin.copy:
+        content: |
+          # Mock Mailu .env file for testing
+          DOMAIN=example.com
+          HOSTNAMES=mail.example.com
+          SECRET_KEY=testingkey123456
+        dest: "{{ mailu_base_dir }}/.env"
+        mode: '0640'
+        
+    - name: Create mock docker-compose file
+      ansible.builtin.copy:
+        content: |
+          version: '3'
+          services:
+            front:
+              image: mailu/nginx:1.9
+            admin:
+              image: mailu/admin:1.9
+          volumes:
+            mail_data: {}
+        dest: "{{ mailu_base_dir }}/docker-compose.yml"
+        mode: '0644'
+
+  roles:
+    - role: backup

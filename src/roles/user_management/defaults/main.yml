@@ -1,28 +1,57 @@
 ---
 # User Management role defaults
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
-# Debug mode for verbose output
+# Enable debug output for user management tasks
+# Type: boolean
+# Default: false
 user_debug: false
 
-# Domain configuration directory
+# Directory containing domain configuration files
+# Type: string
+# Default: "{{ playbook_dir }}/../domains"
 domain_config_dir: "{{ playbook_dir }}/../domains"
 
-# Default quota for users (1GB)
+# Default quota for users (in bytes)
+# Type: integer
+# Default: 1073741824 (1GB)
 user_default_quota_bytes: 1073741824
 
-# Mailu admin API settings
+# Mailu admin API URL for user management
+# Type: string
 mailu_admin_api_url: "http://localhost:8080/admin/api/v1"
 
-# Base directory for mail server
+# Base directory for Mailu installation
+# Type: string
+# Default: "/opt/mailu"
 mailu_base_dir: "/opt/mailu"
 
 # Default user settings
+# Default quota for new users (in bytes)
+# Type: integer
 default_user_quota_bytes: 1073741824  # 1 GB
+# Enable IMAP for users by default
+# Type: boolean
 default_user_enable_imap: true
+# Enable POP for users by default
+# Type: boolean
 default_user_enable_pop: true
+# Enable webmail for users by default
+# Type: boolean
 default_user_enable_webmail: true
+# Enable spam filtering for users by default
+# Type: boolean
 default_user_spam_enabled: true
+# Default spam threshold for users
+# Type: integer
 default_user_spam_threshold: 80
 
 # Whether to create catchall aliases for domains
+# Type: boolean
 enable_catchall: true
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: use health_check.yml to verify user creation and settings

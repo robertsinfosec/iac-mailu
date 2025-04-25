@@ -1,0 +1,4 @@
+# meta/main.yml for crowdsec role
+---
+dependencies:
+  - role: docker_base

@@ -1,0 +1,22 @@
+# defaults/main.yml for crowdsec role
+#
+# All variables are documented with type, default, and description.
+
+# Version of CrowdSec to deploy
+# Type: string
+# Default: "1.5.2"
+crowdsec_version: "1.5.2"
+
+# List of CrowdSec collections to install
+# Type: list
+# Default: see below
+crowdsec_collections:
+  - crowdsecurity/linux
+  - crowdsecurity/sshd
+  - crowdsecurity/smtp
+  - crowdsecurity/traefik
+
+# Enable Docker bouncer
+# Type: boolean
+# Default: true
+crowdsec_enable_docker_bouncer: true

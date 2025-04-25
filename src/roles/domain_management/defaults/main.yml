@@ -1,23 +1,47 @@
 ---
 # Domain Management role defaults
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
-# Debug mode for verbose output
+# Enable debug output for domain management tasks
+# Type: boolean
+# Default: false
 domain_management_debug: false
 
-# Domain configuration directory
+# Directory containing domain configuration files
+# Type: string
+# Default: "{{ playbook_dir }}/../domains"
 domain_config_dir: "{{ playbook_dir }}/../domains"
 
-# Base directory for mail server
+# Base directory for Mailu installation
+# Type: string
+# Default: "/opt/mailu"
 mailu_base_dir: "/opt/mailu"
 
-# Default domain quotas and limits
+# Default quotas and limits for managed domains
+# Maximum number of users per domain
+# Type: integer
 domain_max_users: 10
+# Maximum number of aliases per domain
+# Type: integer
 domain_max_aliases: 10
+# Maximum total quota per domain (in bytes)
+# Type: integer
 domain_max_quota_bytes: 1073741824  # 1GB
 
-# DKIM settings
+# DKIM settings for domain management
+# Enable DKIM for managed domains
+# Type: boolean
 dkim_enabled: true
+# DKIM selector string
+# Type: string
 dkim_selector: "mail"
 
-# Default DMARC policy
+# Default DMARC policy for managed domains
+# Type: string
 default_dmarc_policy: "v=DMARC1; p=none; rua=mailto:postmaster@{{ domain }}"
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: use health_check.yml to verify domain configuration and limits

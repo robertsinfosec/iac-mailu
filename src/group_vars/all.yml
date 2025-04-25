@@ -1,18 +1,57 @@
 ---
 # Common variables for all hosts
+# All variables are documented with type, default, and description.
 
 # Base directory for Mailu configuration and data on the target host
 mailu_base_dir: /opt/mailu
 
+# Target system user for file ownership and service management
+# Type: string
+# Default: "mailuadmin"
+target_user: mailuadmin
+
+# System timezone
+# Type: string
+# Default: "UTC"
+timezone: UTC
+
+# Ansible SSH connection user (can also be set in inventory)
+# Type: string
+ansible_user: mailuadmin
+
+# Version pins for all core components
+mailu_version: "1.9.2"           # Mailu version to deploy
+traefik_version: "2.9.8"         # Traefik version
+crowdsec_version: "1.5.2"        # CrowdSec version
+backup_version: "1.0.0"          # Backup scripts version (if applicable)
+docker_version: "24.0.7"         # Docker Engine version
+docker_compose_version: "2.21.0" # Docker Compose version
+
 # Traefik configuration
 traefik_network_name: traefik_proxy
 traefik_config_dir: "{{ mailu_base_dir }}/traefik"
+traefik_acme_email: "admin@example.com" # Email for Let's Encrypt registration
 
 # Cloudflare API credentials (will be loaded from vault)
 # cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
+cloudflare_api_email: "admin@example.com" # Cloudflare account email (if using API key)
 
-# Default DMARC policy
-default_dmarc_policy: "v=DMARC1; p=none; rua=mailto:postmaster@{{ domain }}" # Default, can be overridden per domain
+# SSH hardening settings
+ssh_port: 22
+ssh_allowed_users:
+  - "{{ target_user }}"
+  - "{{ ansible_user }}"
+
+# Mail security defaults
+mail_dmarc_policy: "reject"      # DMARC policy (none, quarantine, reject)
+mail_spf_policy: "-all"          # SPF policy (~all or -all)
+mail_dkim_key_size: 2048          # DKIM key size
+
+# Resource limits for containers
+mailu_smtp_memory: "512M"
+mailu_smtp_cpu: "0.5"
+mailu_imap_memory: "1G"
+mailu_imap_cpu: "1.0"
 
 # CrowdSec settings
 crowdsec_enabled: true

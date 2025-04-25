@@ -1,48 +1,105 @@
 ---
 # Mailu role defaults
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
-# Debug mode for verbose output
+# Enable debug output for troubleshooting
+# Type: boolean
+# Default: false
 mailu_debug: false
 
-# Base directory for Mailu
-mailu_base_dir: "/opt/mailu"
+# Base directory for Mailu data and configuration
+# Type: string
+# Default: uses global variable from group_vars/all.yml
+mailu_base_dir: "{{ mailu_base_dir | default('/opt/mailu') }}"
 
-# Docker settings
+# Name of the Docker network for Mailu containers
+# Type: string
+# Default: "mailu"
 mailu_docker_network: "mailu"
+
+# Whether to pull Mailu Docker images before deployment
+# Type: boolean
+# Default: true
 mailu_pull_images: true
 
-# Mailu version and container settings
-mailu_version: "latest"
-mailu_registry: "docker.io"  
+# Version of Mailu to deploy (MUST be pinned for production repeatability)
+# Type: string
+# Default: uses global variable from group_vars/all.yml
+mailu_version: "{{ mailu_version | default('1.9.2') }}"
+
+# Docker registry for Mailu images
+# Type: string
+# Default: "docker.io"
+mailu_registry: "docker.io"
+
+# Prefix for Mailu images in the registry
+# Type: string
+# Default: "mailu/"
 mailu_image_prefix: "mailu/"
 
-# Mailu core settings
-mailu_secret_key: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=16') }}"
+# Secret key for Mailu internal use (should be securely generated and vaulted for production)
+# Type: string
+# Default: generated random string
+# For production, override with a vaulted value in vault/secrets.yml
+mailu_secret_key: "{{ vault_mailu_secret_key | default(lookup('password', '/dev/null chars=ascii_letters,digits length=16')) }}"
+
+# Primary admin domain for Mailu (used for admin interface and default config)
+# Type: string
+# Example: "example.com"
 mailu_admin_domain: "{{ primary_domain | default('example.com') }}"
 
-# Mail protocols
-mailu_enable_imap: true
-mailu_enable_imaps: true
-mailu_enable_pop3: true
-mailu_enable_pop3s: true
-mailu_enable_smtp: true
-mailu_enable_smtps: true
-mailu_enable_submission: true
-mailu_enable_webmail: true
-mailu_enable_admin: true
+# Enable/disable core mail protocols and services
+# Type: boolean
+mailu_enable_imap: true      # IMAP (143)
+mailu_enable_imaps: true     # IMAPS (993)
+mailu_enable_pop3: true      # POP3 (110)
+mailu_enable_pop3s: true     # POP3S (995)
+mailu_enable_smtp: true      # SMTP (25)
+mailu_enable_smtps: true     # SMTPS (465)
+mailu_enable_submission: true # Submission (587)
+mailu_enable_webmail: true   # Webmail interface
+mailu_enable_admin: true     # Admin web interface
 
-# Security settings
-mailu_tls_flavor: "mail"  # mail, cert, notls, mail-letsencrypt
+# TLS configuration for Mailu
+# Type: string
+# Options: "mail", "cert", "notls", "mail-letsencrypt"
+# Default: "mail"
+mailu_tls_flavor: "mail"
+
+# Subnet for Mailu Docker network
+# Type: string
+# Default: "192.168.203.0/24"
 mailu_subnet: "192.168.203.0/24"
+
+# List of all hostnames for Mailu services (used for certificate SANs, etc.)
+# Type: list
+# Default: []
 mailu_hostnames: "{{ all_hostnames | default([]) }}"
 
-# Anti-spam/virus settings
+# Enable/disable anti-spam and antivirus features
+# Type: boolean
 mailu_antivirus: true
 mailu_antispam: true
+
+# Spam score threshold for marking messages as spam
+# Type: integer
+# Default: 80
 mailu_spam_threshold: 80
+
+# Whether to reject spam outright (otherwise, mark as spam)
+# Type: boolean
+# Default: false
 mailu_reject_spam: false
 
-# Resource limits
-mailu_memory_limit: "1g"
-mailu_memory_reservation: "256m"
-mailu_cpu_limit: 1.0
+# Resource limits for Mailu containers
+# Type: string (memory), float (CPU)
+# Format: memory (e.g., "1g", "512m"), CPU (e.g., 1.0)
+mailu_memory_limit: "1g"         # Default memory limit for containers
+mailu_memory_reservation: "256m" # Default memory reservation
+mailu_cpu_limit: 1.0              # Default CPU limit (number of cores)
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: use health_check.yml to verify functionality

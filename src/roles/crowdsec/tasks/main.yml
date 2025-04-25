@@ -1,0 +1,29 @@
+# tasks/main.yml for crowdsec role
+#
+# Purpose: Deploy and configure CrowdSec agent and Docker bouncer for intrusion prevention.
+# Idempotent and secure. Assumes Docker is already installed.
+
+- name: Ensure CrowdSec agent container is running
+  community.docker.docker_container:
+    name: crowdsec-agent
+    image: "crowdsecurity/crowdsec:{{ crowdsec_version }}"
+    restart_policy: unless-stopped
+    volumes:
+      - /var/log:/var/log:ro
+      - /etc/crowdsec:/etc/crowdsec
+      - /var/lib/crowdsec:/var/lib/crowdsec
+    env:
+      TZ: "{{ common_timezone | default('UTC') }}"
+    state: started
+  tags: [crowdsec, agent]
+
+- name: Ensure CrowdSec Docker bouncer container is running
+  community.docker.docker_container:
+    name: crowdsec-bouncer
+    image: "crowdsecurity/cs-firewall-bouncer:latest"
+    restart_policy: unless-stopped
+    env:
+      CROWDSEC_LAPI_URL: "http://crowdsec-agent:8080/"
+    state: started
+  when: crowdsec_enable_docker_bouncer | bool
+  tags: [crowdsec, bouncer]

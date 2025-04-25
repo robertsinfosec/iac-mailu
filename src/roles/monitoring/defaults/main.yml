@@ -1,91 +1,226 @@
 ---
 # Monitoring role default variables
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
-# General monitoring settings
+# Enable/disable monitoring role
+# Type: boolean
+# Default: true
 monitoring_enabled: true
+
+# Base directory for monitoring data and configuration
+# Type: string
+# Default: /opt/monitoring
 monitoring_base_dir: /opt/monitoring
+
+# Directory for monitoring data
+# Type: string
 monitoring_data_dir: "{{ monitoring_base_dir }}/data"
 
 # Prometheus configuration
+# Enable Prometheus
+# Type: boolean
 prometheus_enabled: true
+# Prometheus version to deploy
+# Type: string
 prometheus_version: "v2.46.0"
+# Prometheus config directory
+# Type: string
 prometheus_config_dir: "{{ monitoring_base_dir }}/prometheus"
+# Prometheus data directory
+# Type: string
 prometheus_data_dir: "{{ monitoring_data_dir }}/prometheus"
+# Retention time for Prometheus data
+# Type: string
 prometheus_retention_time: "15d"
+# Scrape interval for Prometheus
+# Type: string
 prometheus_scrape_interval: "15s"
+# Evaluation interval for Prometheus rules
+# Type: string
 prometheus_evaluation_interval: "15s"
+# Prometheus web UI port
+# Type: integer
 prometheus_port: 9090
 
 # Node exporter configuration
+# Enable Node Exporter
+# Type: boolean
 node_exporter_enabled: true
+# Node Exporter version
+# Type: string
 node_exporter_version: "1.6.1"
+# Node Exporter port
+# Type: integer
 node_exporter_port: 9100
 
 # Mailserver exporters
+# Enable Postfix exporter
+# Type: boolean
 postfix_exporter_enabled: true
+# Postfix exporter version
+# Type: string
 postfix_exporter_version: "0.3.0"
+# Postfix exporter port
+# Type: integer
 postfix_exporter_port: 9154
+# Postfix log directory
+# Type: string
 postfix_exporter_log_dir: "/var/log"
 
+# Enable Dovecot exporter
+# Type: boolean
 dovecot_exporter_enabled: true
+# Dovecot exporter version
+# Type: string
 dovecot_exporter_version: "0.1.3"
+# Dovecot exporter port
+# Type: integer
 dovecot_exporter_port: 9166
 
+# Enable Redis exporter
+# Type: boolean
 redis_exporter_enabled: true
+# Redis exporter version
+# Type: string
 redis_exporter_version: "1.50.0"
+# Redis exporter port
+# Type: integer
 redis_exporter_port: 9121
 
 # Blackbox exporter for external endpoint checks
+# Enable Blackbox exporter
+# Type: boolean
 blackbox_exporter_enabled: true
+# Blackbox exporter version
+# Type: string
 blackbox_exporter_version: "0.24.0"
+# Blackbox exporter port
+# Type: integer
 blackbox_exporter_port: 9115
 
 # Grafana configuration
+# Enable Grafana
+# Type: boolean
 grafana_enabled: true
+# Grafana version
+# Type: string
 grafana_version: "10.0.3"
+# Grafana web UI port
+# Type: integer
 grafana_port: 3000
+# Grafana config directory
+# Type: string
 grafana_config_dir: "{{ monitoring_base_dir }}/grafana"
+# Grafana data directory
+# Type: string
 grafana_data_dir: "{{ monitoring_data_dir }}/grafana"
+# Grafana admin user
+# Type: string
 grafana_admin_user: admin
+# Grafana admin password variable (vaulted)
+# Type: string
 grafana_admin_password_var: "vault_grafana_admin_password"
+# Enable anonymous access to Grafana
+# Type: boolean
 grafana_anonymous_enabled: false
+# Enable SMTP for Grafana alerts
+# Type: boolean
 grafana_smtp_enabled: true
+# SMTP host for Grafana
+# Type: string
 grafana_smtp_host: "localhost:25"
+# From address for Grafana SMTP
+# Type: string
 grafana_smtp_from_address: "grafana@{{ primary_domain }}"
+# From name for Grafana SMTP
+# Type: string
 grafana_smtp_from_name: "Grafana Alert"
 
-# Alert manager configuration
+# Alertmanager configuration
+# Enable Alertmanager
+# Type: boolean
 alertmanager_enabled: true
+# Alertmanager version
+# Type: string
 alertmanager_version: "0.26.0"
+# Alertmanager config directory
+# Type: string
 alertmanager_config_dir: "{{ monitoring_base_dir }}/alertmanager"
+# Alertmanager data directory
+# Type: string
 alertmanager_data_dir: "{{ monitoring_data_dir }}/alertmanager"
+# Alertmanager port
+# Type: integer
 alertmanager_port: 9093
 
 # Integration with ntfy for alerts
+# Enable ntfy integration for Alertmanager
+# Type: boolean
 alertmanager_ntfy_enabled: "{{ ntfy_enabled | default(false) }}"
+# Ntfy server URL
+# Type: string
 alertmanager_ntfy_url: "{{ ntfy_url | default('') }}"
+# Ntfy topic for alerts
+# Type: string
 alertmanager_ntfy_topic: "{{ ntfy_topic | default('alerts') }}"
+# Ntfy auth token variable (vaulted)
+# Type: string
 alertmanager_ntfy_auth_token_var: "vault_ntfy_auth_token"
 
-# Docker container network
+# Docker container network for monitoring
+# Type: string
 monitoring_network_name: monitoring_net
 
 # Security settings
-monitoring_expose_ui: false  # Set to true to expose UIs through Traefik
+# Expose monitoring UIs through Traefik
+# Type: boolean
+monitoring_expose_ui: false
+# Enable basic auth for monitoring UIs
+# Type: boolean
 monitoring_basic_auth_enabled: true
+# Basic auth username
+# Type: string
 monitoring_basic_auth_user: monitor
+# Basic auth password variable (vaulted)
+# Type: string
 monitoring_basic_auth_password_var: "vault_monitor_password"
 
-# Log management with Loki
+# Loki log management
+# Enable Loki for log aggregation
+# Type: boolean
 loki_enabled: true
+# Loki version
+# Type: string
 loki_version: "2.9.1"
+# Loki config directory
+# Type: string
 loki_config_dir: "{{ monitoring_base_dir }}/loki"
+# Loki data directory
+# Type: string
 loki_data_dir: "{{ monitoring_data_dir }}/loki"
+# Loki port
+# Type: integer
 loki_port: 3100
-loki_retention_period: "744h"  # 31 days
+# Loki retention period
+# Type: string
+loki_retention_period: "744h"
 
-# Log shipping with Promtail
+# Promtail log shipping
+# Enable Promtail for log shipping
+# Type: boolean
 promtail_enabled: true
+# Promtail version
+# Type: string
 promtail_version: "2.9.1"
+# Promtail config directory
+# Type: string
 promtail_config_dir: "{{ monitoring_base_dir }}/promtail"
+# Promtail port
+# Type: integer
 promtail_port: 9080
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: use health_check.yml to verify monitoring functionality

@@ -1,33 +1,92 @@
 ---
 # Traefik role defaults
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
-# Basic Traefik settings
+# Enable/disable Traefik deployment
+# Type: boolean
+# Default: true
 traefik_enabled: true
+
+# Directory for Traefik configuration
+# Type: string
+# Default: "/etc/traefik"
 traefik_config_dir: "/etc/traefik"
+
+# Traefik Docker image name
+# Type: string
+# Default: "traefik"
 traefik_image: "traefik"
+
+# Traefik version to deploy (MUST be pinned for production)
+# Type: string
+# Example: "v2.9.8"
 traefik_version: "v2.10"
+
+# Whether to pull the Traefik image before deployment
+# Type: boolean
+# Default: true
 traefik_pull_image: true
+
+# Docker network name for Traefik
+# Type: string
+# Default: "traefik"
 traefik_network_name: "traefik"
 
-# TLS settings
+# Enable TLS for Traefik
+# Type: boolean
+# Default: true
 traefik_enable_tls: true
+
+# Email address for ACME/Let's Encrypt registration
+# Type: string
 traefik_acme_email: "admin@{{ primary_domain | default('example.com') }}"
-traefik_acme_challenge_type: "tls-alpn-01"  # or "http-01"
+
+# ACME challenge type ("tls-alpn-01" or "http-01")
+# Type: string
+traefik_acme_challenge_type: "tls-alpn-01"
+
+# Use Let's Encrypt staging environment (for testing)
+# Type: boolean
 traefik_acme_staging: false
+
+# Default certificate resolver name
+# Type: string
 traefik_default_cert_resolver: "letsencrypt"
 
 # Logging settings
-traefik_log_level: "INFO"  # DEBUG, INFO, WARN, ERROR, FATAL
+# Traefik log level (DEBUG, INFO, WARN, ERROR, FATAL)
+# Type: string
+traefik_log_level: "INFO"
+# Enable access logs
+# Type: boolean
 traefik_access_logs: true
 
 # API & Dashboard settings
+# Enable Traefik API
+# Type: boolean
 traefik_api_enabled: true
+# Enable Traefik dashboard
+# Type: boolean
 traefik_dashboard_enabled: true
+# Hostname for Traefik dashboard
+# Type: string
 traefik_dashboard_host: "traefik.{{ primary_domain | default('example.com') }}"
+# Dashboard basic auth username
+# Type: string
 traefik_dashboard_username: "admin"
-traefik_dashboard_hashed_password: "{{ vault_traefik_dashboard_password_hash | default('$apr1$H6uskkkW$IgXLP6ewTrSuBkTrqE8wj/') }}"  # Default: 'admin'
+# Dashboard basic auth password hash (vaulted)
+# Type: string
+traefik_dashboard_hashed_password: "{{ vault_traefik_dashboard_password_hash | default('$apr1$H6uskkkW$IgXLP6ewTrSuBkTrqE8wj/') }}"
 
 # Middleware settings
+# List of default middlewares to apply
+# Type: list
 traefik_default_middlewares:
   - "secure-headers@file"
   - "gzip@file"
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: use health_check.yml to verify Traefik and certificate status

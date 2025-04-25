@@ -1,0 +1,3 @@
+# meta/main.yml for common role
+---
+depends: []

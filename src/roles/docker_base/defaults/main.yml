@@ -1,24 +1,32 @@
 ---
 # Default values for docker_base role
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
-# Docker installation method
-docker_install_method: "package"  # Options: package, script
+# Docker installation method ("package" or "script")
+# Type: string
+# Default: "package"
+docker_install_method: "package"
 
-# Docker package names
+# List of Docker package names to install
+# Type: list
 docker_packages:
   - docker-ce
   - docker-ce-cli
   - containerd.io
   - docker-compose-plugin
 
-# Docker service name
+# Name of the Docker service
+# Type: string
 docker_service_name: "docker"
 
-# Docker users (to be added to docker group)
+# Users to add to the docker group
+# Type: list
 docker_users:
   - "{{ ansible_user }}"
 
-# Docker daemon options
+# Docker daemon configuration options
+# Type: dict
 docker_daemon_options:
   log-driver: "json-file"
   log-opts:
@@ -28,10 +36,13 @@ docker_daemon_options:
   iptables: true
   live-restore: true
 
-# Docker Compose version
-docker_compose_version: "latest"
+# Docker Compose version to install (MUST be pinned for production)
+# Type: string
+# Example: "2.21.0"
+docker_compose_version: "2.21.0"
 
 # Docker network configuration
+# Type: list
 docker_networks:
   - name: "traefik-public"
     driver: "bridge"
@@ -40,14 +51,23 @@ docker_networks:
       - subnet: "172.28.0.0/16"
         gateway: "172.28.0.1"
 
-# Docker storage directory
+# Directory for Docker storage
+# Type: string
 docker_data_dir: "/var/lib/docker"
 
-# Whether to enable Docker system prune cron job
+# Enable Docker system prune cron job
+# Type: boolean
 docker_enable_autoclean: true
 
-# Docker autoclean schedule (cron syntax)
-docker_autoclean_schedule: "0 2 * * 0"  # 2 AM on Sundays
+# Cron schedule for Docker autoclean (in cron syntax)
+# Type: string
+docker_autoclean_schedule: "0 2 * * 0"
 
-# Docker autoclean options
+# Options for Docker autoclean command
+# Type: string
 docker_autoclean_options: "--all --volumes --force"
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: ensure Docker and Compose are installed and running

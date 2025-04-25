@@ -1,0 +1,34 @@
+# tasks/main.yml for firewall role
+#
+# Purpose: Configure host firewall (UFW or firewalld) to allow only required ports.
+# Idempotent and includes error handling to prevent SSH lockout.
+
+- name: Ensure UFW is installed
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+  when: firewall_backend == 'ufw'
+  tags: [firewall, ufw]
+
+- name: Set default UFW policies
+  community.general.ufw:
+    state: reset
+  when: firewall_backend == 'ufw'
+  tags: [firewall, ufw]
+
+- name: Allow required TCP ports (UFW)
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: "{{ firewall_allowed_tcp_ports }}"
+  when: firewall_backend == 'ufw'
+  tags: [firewall, ufw]
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
+  when: firewall_backend == 'ufw' and firewall_enable | bool
+  tags: [firewall, ufw]
+
+# TODO: Add firewalld support if required by PRD

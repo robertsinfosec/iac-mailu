@@ -1,0 +1,31 @@
+# tasks/main.yml for hardening role
+#
+# Purpose: Apply OS/SSH hardening, sysctl, and SSH banner. Idempotent and secure.
+
+- name: Apply sysctl parameters
+  ansible.builtin.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop: "{{ hardening_sysctl_params | dict2items }}"
+  tags: [hardening, sysctl]
+
+- name: Configure SSH daemon
+  ansible.builtin.template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    mode: '0644'
+    owner: root
+    group: root
+  notify: Restart sshd
+  tags: [hardening, ssh]
+
+- name: Configure SSH warning banner
+  ansible.builtin.template:
+    src: issue.net.j2
+    dest: "{{ hardening_ssh_banner_path }}"
+    mode: '0644'
+    owner: root
+    group: root
+  tags: [hardening, ssh, banner]

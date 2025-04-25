@@ -1,0 +1,26 @@
+# defaults/main.yml for common role
+#
+# All variables are documented with type, default, and description.
+
+# System timezone to configure
+# Type: string
+# Default: "UTC"
+common_timezone: "UTC"
+
+# List of essential system packages to install
+# Type: list
+# Default: see below
+common_essential_packages:
+  - python3
+  - python3-pip
+  - curl
+  - ca-certificates
+  - apt-transport-https
+  - software-properties-common
+  - git
+  - acl
+
+# Whether to update apt cache before installing packages
+# Type: boolean
+# Default: true
+common_update_apt_cache: true

@@ -1,55 +1,84 @@
 ---
 # Default values for health_check role
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
-# Base directory for health checks
+# Base directory for health check scripts and data
+# Type: string
+# Default: "/opt/mailu/health"
 health_check_base_dir: "/opt/mailu/health"
 
 # Health check interval in minutes
+# Type: integer
+# Default: 5
 health_check_interval: 5
 
-# Health check services to monitor
+# List of services to monitor with health checks
+# Type: list
 health_check_services:
   - name: smtp
     port: 25
     type: tcp
     timeout: 10
-    
   - name: imap
     port: 143
     type: tcp
     timeout: 5
-    
   - name: submission
     port: 587
     type: tcp
     timeout: 5
-    
   - name: webmail
     path: "/webmail/"
     type: http
     timeout: 10
     status_code: 200
-    
   - name: admin
     path: "/admin/"
     type: http
     timeout: 10
     status_code: 200
 
-# Notification settings
+# Enable notifications for health check failures
+# Type: boolean
 health_check_notify_enabled: true
-health_check_notify_method: "smtp"  # Options: smtp, webhook, script
+
+# Notification method (smtp, webhook, script)
+# Type: string
+health_check_notify_method: "smtp"
+
+# Email address to notify on health check failure
+# Type: string
 health_check_notify_email: "admin@{{ primary_domain | default('example.com') }}"
+
+# SMTP server for notifications
+# Type: string
 health_check_smtp_server: "localhost"
+# SMTP port for notifications
+# Type: integer
 health_check_smtp_port: 25
+# From address for SMTP notifications
+# Type: string
 health_check_smtp_from: "health@{{ primary_domain | default('example.com') }}"
 
 # Webhook notification settings
+# Webhook URL for notifications
+# Type: string
 health_check_webhook_url: ""
+# HTTP method for webhook notifications
+# Type: string
 health_check_webhook_method: "POST"
 
 # Custom script notification settings
+# Path to custom notification script
+# Type: string
 health_check_script_path: ""
 
-# Debug mode
+# Enable debug output for health check tasks
+# Type: boolean
 health_check_debug: false
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: run playbooks/health_check.yml and confirm all checks pass

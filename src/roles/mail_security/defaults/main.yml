@@ -1,52 +1,121 @@
 ---
 # Default variables for mail security and deliverability role
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
-# General settings
+# Enable/disable the mail_security role
+# Type: boolean
+# Default: true
 mail_security_enabled: true
 
 # SPF configuration
+# Enable SPF record management
+# Type: boolean
 spf_enabled: true
+# SPF record value (default allows only MX, A, and server IP)
+# Type: string
 spf_record: "v=spf1 mx a ip4:{{ ansible_default_ipv4.address }} -all"
-spf_subdomain_policy: "v=spf1 -all"  # Strict policy for subdomains that shouldn't send mail
+# SPF policy for subdomains that should not send mail
+# Type: string
+spf_subdomain_policy: "v=spf1 -all"
 
 # DKIM configuration
+# Enable DKIM signing
+# Type: boolean
+# Default: true
 dkim_enabled: true
+# DKIM selector (used in DNS record)
+# Type: string
+# Default: "mail"
 dkim_selector: "mail"
-dkim_key_size: 2048  # RSA key size (2048 is currently recommended)
+# DKIM RSA key size (recommended: 2048)
+# Type: integer
+# Default: 2048
+dkim_key_size: 2048
+# DKIM signing algorithm
+# Type: string
+# Default: "rsa-sha256"
 dkim_algorithm: "rsa-sha256"
 
 # DMARC configuration
+# Enable DMARC policy
+# Type: boolean
 dmarc_enabled: true
-dmarc_policy: "quarantine"  # Options: none, quarantine, reject
+# DMARC policy (none, quarantine, reject)
+# Type: string
+dmarc_policy: "quarantine"
+# DMARC subdomain policy
+# Type: string
 dmarc_subdomain_policy: "quarantine"
-dmarc_percentage: 100  # Apply policy to 100% of messages
+# Percentage of messages DMARC policy applies to
+# Type: integer
+# Default: 100
+dmarc_percentage: 100
+# Aggregate report email address
+# Type: string
 dmarc_report_email: "{{ 'postmaster@' + primary_domain }}"
+# Forensic report email address
+# Type: string
 dmarc_forensic_email: "{{ 'postmaster@' + primary_domain }}"
-dmarc_report_interval: 86400  # 1 day in seconds
+# DMARC report interval (seconds)
+# Type: integer
+# Default: 86400 (1 day)
+dmarc_report_interval: 86400
 
 # MTA-STS (Mail Transfer Agent Strict Transport Security)
+# Enable MTA-STS
+# Type: boolean
 mta_sts_enabled: true
-mta_sts_mode: "testing"  # Options: testing, enforce, none
-mta_sts_max_age: 604800  # 1 week in seconds
+# MTA-STS mode (testing, enforce, none)
+# Type: string
+mta_sts_mode: "testing"
+# MTA-STS max age (seconds)
+# Type: integer
+# Default: 604800 (1 week)
+mta_sts_max_age: 604800
 
 # DANE (DNSSEC) support
+# Enable DANE TLSA records
+# Type: boolean
 dane_enabled: true
-dane_selector: 3  # DANE-TA
-dane_matching_type: 1  # SHA-256
+# DANE selector (default: 3 = DANE-TA)
+# Type: integer
+dane_selector: 3
+# DANE matching type (default: 1 = SHA-256)
+# Type: integer
+dane_matching_type: 1
 
 # TLS-RPT (TLS Reporting)
+# Enable TLS-RPT DNS record
+# Type: boolean
 tls_rpt_enabled: true
+# TLS-RPT report email address
+# Type: string
 tls_rpt_email: "{{ 'postmaster@' + primary_domain }}"
 
 # BIMI (Brand Indicators for Message Identification)
+# Enable BIMI DNS record
+# Type: boolean
 bimi_enabled: false
+# BIMI selector
+# Type: string
 bimi_selector: "default"
-bimi_logo_url: ""  # URL to your SVG logo
-bimi_vmcs_url: ""  # Verified Mark Certificate URL (if available)
+# BIMI logo URL (SVG)
+# Type: string
+bimi_logo_url: ""
+# BIMI Verified Mark Certificate URL
+# Type: string
+bimi_vmcs_url: ""
 
 # SMTP security settings
-smtp_tls_security_level: "may"  # Options: may, encrypt, dane, dane-only, fingerprint, verify, secure
-smtp_tls_policy_maps: []  # List of domains with specific TLS policies
+# TLS security level for outbound SMTP
+# Type: string
+smtp_tls_security_level: "may"
+# Custom TLS policy maps (list of domain:policy)
+# Type: list
+smtp_tls_policy_maps: []
+# HELO restrictions for SMTP
+# Type: list
 smtp_helo_restrictions:
   - "permit_mynetworks"
   - "permit_sasl_authenticated"
@@ -54,24 +123,39 @@ smtp_helo_restrictions:
   - "reject_non_fqdn_helo_hostname"
 
 # Sender address verification
+# Enable sender verification
+# Type: boolean
 sender_verification_enabled: true
+# Enable sender login maps
+# Type: boolean
 sender_login_maps_enabled: true
 
 # Rate limiting
+# Enable rate limiting for SMTP clients
+# Type: boolean
 rate_limiting_enabled: true
-smtpd_client_message_rate_limit: 100  # Messages per hour per client
-smtpd_client_connection_rate_limit: 30  # Connections per hour per client
-smtpd_client_recipient_rate_limit: 100  # Recipients per hour per client
-smtpd_client_error_rate_limit: 10  # Errors per hour per client
+# Messages per hour per client
+# Type: integer
+smtpd_client_message_rate_limit: 100
+# Connections per hour per client
+# Type: integer
+smtpd_client_connection_rate_limit: 30
+# Recipients per hour per client
+# Type: integer
+smtpd_client_recipient_rate_limit: 100
+# Errors per hour per client
+# Type: integer
+smtpd_client_error_rate_limit: 10
 
-# Email authentication
+# Email authentication restrictions
+# Type: list
 smtpd_relay_restrictions:
   - "permit_mynetworks"
   - "permit_sasl_authenticated"
   - "reject_unauth_destination"
 smtpd_sender_restrictions:
   - "permit_mynetworks"
-  - "permit_sasl_authenticated" 
+  - "permit_sasl_authenticated"
   - "reject_unknown_sender_domain"
   - "reject_non_fqdn_sender"
 smtpd_recipient_restrictions:
@@ -81,16 +165,29 @@ smtpd_recipient_restrictions:
   - "reject_non_fqdn_recipient"
 
 # Reverse PTR verification
+# Enable PTR (reverse DNS) verification
+# Type: boolean
 ptr_verification_enabled: true
 
-# External blacklists
+# External blacklists (RBLs)
+# Enable RBL checks
+# Type: boolean
 rbl_checks_enabled: true
+# List of RBLs to check
+# Type: list
 rbl_lists:
   - "zen.spamhaus.org"
   - "bl.spamcop.net"
 
-# SMTP banner
+# SMTP banner string
+# Type: string
 smtp_banner: "{{ primary_domain }} ESMTP"
 
-# IPv6 support
+# Enable IPv6 support
+# Type: boolean
 ipv6_enabled: true
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: use health_check.yml to verify functionality

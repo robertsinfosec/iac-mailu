@@ -1,0 +1,25 @@
+# defaults/main.yml for firewall role
+#
+# All variables are documented with type, default, and description.
+
+# List of allowed TCP ports (e.g., [22, 25, 80, 443, 465, 587, 993])
+# Type: list
+# Default: see below
+firewall_allowed_tcp_ports:
+  - 22    # SSH
+  - 25    # SMTP
+  - 80    # HTTP (for ACME, if needed)
+  - 443   # HTTPS
+  - 465   # SMTPS
+  - 587   # Submission
+  - 993   # IMAPS
+
+# Whether to enable UFW (default) or firewalld
+# Type: string
+# Default: "ufw"
+firewall_backend: "ufw"
+
+# Whether to enable the firewall after configuration
+# Type: boolean
+# Default: true
+firewall_enable: true

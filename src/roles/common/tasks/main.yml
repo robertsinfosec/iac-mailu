@@ -1,0 +1,21 @@
+# tasks/main.yml for common role
+#
+# Purpose: Install essential system packages and configure system timezone.
+# This file is idempotent and fails fast on errors.
+
+- name: Ensure apt cache is updated
+  ansible.builtin.apt:
+    update_cache: yes
+  when: common_update_apt_cache | bool
+  tags: [common, packages]
+
+- name: Install essential system packages
+  ansible.builtin.apt:
+    name: "{{ common_essential_packages }}"
+    state: present
+  tags: [common, packages]
+
+- name: Set system timezone
+  ansible.builtin.timezone:
+    name: "{{ common_timezone }}"
+  tags: [common, timezone]

@@ -1,38 +1,70 @@
 ---
 # Default values for backup role
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
 # Backup storage strategy (local, s3, b2, sftp)
+# Type: string
+# Default: "local"
 backup_strategy: "local"
 
 # Base directory for backups
+# Type: string
+# Default: "/opt/mailu/backup"
 backup_base_dir: "/opt/mailu/backup"
 
-# Mailu data directory
+# Mailu data directory to back up
+# Type: string
+# Default: "/opt/mailu/data"
 mailu_data_dir: "/opt/mailu/data"
 
-# Backup frequency
+# Backup frequency scheduling
+# Type: boolean
 backup_schedule_daily: true
 backup_schedule_weekly: true
 backup_schedule_monthly: true
 
 # Daily backup settings
+# Hour to run daily backup (0-23)
+# Type: integer
 backup_daily_hour: 2
+# Minute to run daily backup (0-59)
+# Type: integer
 backup_daily_minute: 0
-backup_daily_retention: 7  # days
+# Number of daily backups to retain
+# Type: integer
+backup_daily_retention: 7
 
 # Weekly backup settings
-backup_weekly_day: 0  # Sunday
+# Day of week to run weekly backup (0=Sunday)
+# Type: integer
+backup_weekly_day: 0
+# Hour to run weekly backup
+# Type: integer
 backup_weekly_hour: 3
+# Minute to run weekly backup
+# Type: integer
 backup_weekly_minute: 0
-backup_weekly_retention: 4  # weeks
+# Number of weekly backups to retain
+# Type: integer
+backup_weekly_retention: 4
 
 # Monthly backup settings
-backup_monthly_day: 1  # First day of month
+# Day of month to run monthly backup (1-31)
+# Type: integer
+backup_monthly_day: 1
+# Hour to run monthly backup
+# Type: integer
 backup_monthly_hour: 4
+# Minute to run monthly backup
+# Type: integer
 backup_monthly_minute: 0
-backup_monthly_retention: 6  # months
+# Number of monthly backups to retain
+# Type: integer
+backup_monthly_retention: 6
 
-# Backup components
+# Backup components (enable/disable)
+# Type: boolean
 backup_mailu_data: true
 backup_mailu_config: true
 backup_mailu_dkim: true
@@ -42,50 +74,120 @@ backup_traefik_config: true
 backup_docker_compose: true
 
 # Compression settings
+# Enable compression for backup archives
+# Type: boolean
 backup_compression: true
-backup_compression_algorithm: "gzip"  # gzip, bzip2, xz
+# Compression algorithm (gzip, bzip2, xz)
+# Type: string
+backup_compression_algorithm: "gzip"
 
 # Encryption settings
+# Enable encryption for backup archives
+# Type: boolean
 backup_encryption: false
+# Variable name for backup encryption passphrase (should be vaulted)
+# Type: string
 backup_encryption_passphrase_var: "vault_backup_passphrase"
 
 # Notification settings
+# Enable notifications for backup results
+# Type: boolean
 backup_notify_enabled: true
-backup_notify_method: "smtp"  # smtp, webhook
+# Notification method (smtp, webhook)
+# Type: string
+backup_notify_method: "smtp"
+# Notify on successful backup
+# Type: boolean
 backup_notify_on_success: false
+# Notify on backup failure
+# Type: boolean
 backup_notify_on_failure: true
+# Notification email address
+# Type: string
 backup_notify_email: "admin@{{ primary_domain | default('example.com') }}"
 
 # S3 backup settings
+# S3 bucket name
+# Type: string
 s3_bucket: "{{ primary_domain | default('example') }}-mail-backup"
+# S3 region
+# Type: string
 s3_region: "us-east-1"
-s3_endpoint: ""  # For non-AWS S3-compatible services
+# S3 endpoint (for non-AWS S3-compatible services)
+# Type: string
+s3_endpoint: ""
+# Variable name for S3 access key (should be vaulted)
+# Type: string
 s3_access_key_var: "vault_s3_access_key"
+# Variable name for S3 secret key (should be vaulted)
+# Type: string
 s3_secret_key_var: "vault_s3_secret_key"
+# S3 path/prefix for backups
+# Type: string
 s3_path: "mailu-backup"
-s3_storage_class: "STANDARD"  # STANDARD, STANDARD_IA, GLACIER
+# S3 storage class (STANDARD, STANDARD_IA, GLACIER)
+# Type: string
+s3_storage_class: "STANDARD"
 
 # B2 backup settings
+# B2 bucket name
+# Type: string
 b2_bucket: "{{ primary_domain | default('example') }}-mail-backup"
-b2_account_id_var: "vault_b2_account_id" 
+# Variable name for B2 account ID (should be vaulted)
+# Type: string
+b2_account_id_var: "vault_b2_account_id"
+# Variable name for B2 application key (should be vaulted)
+# Type: string
 b2_application_key_var: "vault_b2_application_key"
+# B2 path/prefix for backups
+# Type: string
 b2_path: "mailu-backup"
 
 # SFTP backup settings
+# SFTP host
+# Type: string
 sftp_host: ""
+# SFTP port
+# Type: integer
 sftp_port: 22
+# SFTP username
+# Type: string
 sftp_user: "backup"
+# Variable name for SFTP private key file (should be vaulted)
+# Type: string
 sftp_key_file_var: "vault_sftp_key_file"
+# SFTP path for backups
+# Type: string
 sftp_path: "/backup/mailu"
 
 # Database backup settings (if using external database)
+# Enable database backup
+# Type: boolean
 backup_database: false
-db_type: "postgresql"  # mysql, postgresql
+# Database type (mysql, postgresql)
+# Type: string
+db_type: "postgresql"
+# Database host
+# Type: string
 db_host: "localhost"
+# Database port
+# Type: integer
 db_port: 5432
+# Database name
+# Type: string
 db_name: "mailu"
+# Variable name for DB user (should be vaulted)
+# Type: string
 db_user_var: "vault_db_user"
+# Variable name for DB password (should be vaulted)
+# Type: string
 db_password_var: "vault_db_password"
 
-# Debug mode
+# Enable debug output for troubleshooting
+# Type: boolean
 backup_debug: false
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: use health_check.yml to verify functionality

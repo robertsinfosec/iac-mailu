@@ -1,0 +1,44 @@
+# defaults/main.yml for hardening role
+#
+# All variables are documented with type, default, and description.
+
+# SSH port to configure
+# Type: int
+# Default: 22
+hardening_ssh_port: 22
+
+# List of allowed SSH users
+# Type: list
+# Default: ["mailuadmin"]
+hardening_ssh_allowed_users:
+  - "mailuadmin"
+
+# Whether to disable SSH password authentication
+# Type: boolean
+# Default: true
+hardening_disable_ssh_password_auth: true
+
+# Whether to disable root SSH login
+# Type: boolean
+# Default: true
+hardening_disable_ssh_root_login: true
+
+# Path to SSH banner file
+# Type: string
+# Default: /etc/issue.net
+hardening_ssh_banner_path: /etc/issue.net
+
+# Sysctl parameters to apply
+# Type: dict
+# Default: see below
+hardening_sysctl_params:
+  net.ipv4.tcp_syncookies: 1
+  net.ipv4.conf.all.rp_filter: 1
+  net.ipv4.conf.default.rp_filter: 1
+  net.ipv4.icmp_echo_ignore_broadcasts: 1
+  net.ipv4.conf.all.accept_source_route: 0
+  net.ipv4.conf.default.accept_source_route: 0
+  net.ipv4.conf.all.accept_redirects: 0
+  net.ipv4.conf.default.accept_redirects: 0
+  net.ipv4.conf.all.secure_redirects: 1
+  net.ipv4.conf.default.secure_redirects: 1

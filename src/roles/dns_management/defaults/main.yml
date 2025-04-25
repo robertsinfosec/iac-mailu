@@ -1,22 +1,32 @@
 ---
 # Default values for dns_management role
+#
+# All variables are documented with type, default, and description as required by the style guide.
 
-# Base directory for domain configurations
+# Directory containing domain configuration files
+# Type: string
+# Default: "{{ playbook_dir }}/../domains"
 domain_config_dir: "{{ playbook_dir }}/../domains"
 
-# Base directory for mail server
+# Base directory for Mailu installation
+# Type: string
+# Default: "/opt/mailu"
 mailu_base_dir: "/opt/mailu"
 
-# DNS records directory
+# Directory for generated DNS records (optional, for audit/debug)
+# Type: string
 dns_records_dir: "{{ playbook_dir }}/../dns_records"
 
-# Whether to generate debug output
+# Enable debug output for DNS tasks
+# Type: boolean
 dns_debug: false
 
-# DNS provider (currently supported: cloudflare)
+# DNS provider to use (currently only "cloudflare" is supported)
+# Type: string
 dns_provider: "cloudflare"
 
-# DNS records to manage
+# Which DNS records to manage
+# Type: boolean
 manage_a_records: true
 manage_mx_records: true
 manage_spf_records: true
@@ -25,17 +35,30 @@ manage_dmarc_records: true
 manage_autoconfig_records: true
 
 # Default SPF record value
+# Type: string
 default_spf_record: "v=spf1 mx -all"
 
-# Default DMARC policy
+# Default DMARC policy value
+# Type: string
 default_dmarc_policy: "v=DMARC1; p=none; rua=mailto:postmaster@{{ domain }}"
 
-# Whether to proxy web records through Cloudflare
+# Whether to proxy web records through Cloudflare (orange cloud)
+# Type: boolean
 proxy_web_records: true
 
-# Whether to proxy mail records (should always be false)
+# Whether to proxy mail records (should always be false for mail delivery)
+# Type: boolean
 proxy_mail_records: false
 
-# DKIM settings - these should match domain_management role settings
+# DKIM settings (should match domain_management role)
+# Enable DKIM record management
+# Type: boolean
 dkim_enabled: true
+# DKIM selector string
+# Type: string
 dkim_selector: "mail"
+
+# Testing Guidelines:
+# 1. Run with --check first: ansible-playbook site.yml --check
+# 2. Verify idempotence: run twice, second run should report no changes
+# 3. Validate: use health_check.yml to verify DNS record propagation

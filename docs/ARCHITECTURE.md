@@ -271,7 +271,7 @@ graph LR
     B -- Allows --> C(Traefik Container);
     C -- TLS Termination & Routing --> D(Mailu Front Container);
     D -- Routes to webmail.domain --> E(Webmail Container);
-    D -- Routes to admin.domain --> F(Admin Container);
+    D -- Routes to webmailadmin.domain --> F(Admin Container);
     E -- Accesses mail via --> G(Dovecot Container);
     F -- Manages accounts in --> G;
     G -- Reads/writes --> H(Persistent Mail Volume);

@@ -1,6 +1,19 @@
 ---
 # Health check tasks for Mailu services
 
+- name: Check if Docker service exists
+  ansible.builtin.systemd:
+    name: docker
+  register: docker_service_check
+  failed_when: false
+  changed_when: false
+
+- name: Fail if Docker service is not found
+  ansible.builtin.fail:
+    msg: >-
+      Docker service not found. Docker must be installed and running for Mailu to operate. Please ensure Docker is installed and the service is available as 'docker'.
+  when: docker_service_check.status is not defined
+
 - name: Check if Docker is running
   ansible.builtin.service:
     name: docker
@@ -8,7 +21,7 @@
   register: docker_status
   check_mode: yes
   changed_when: false
-  failed_when: docker_status.status.ActiveState != 'active'
+  failed_when: docker_status.status is defined and docker_status.status.ActiveState != 'active'
 
 - name: Get status of running containers
   community.docker.docker_container_info:
@@ -24,7 +37,7 @@
     - mailu_antivirus
     - mailu_webmail
     - mailu_redis
-  ignore_errors: yes
+  ignore_errors: true
   failed_when: false
 
 - name: Check if containers are running
@@ -62,9 +75,11 @@
 
 - name: Update health report with service check results
   ansible.builtin.set_fact:
-    health_status: "{% if health_check_result.status != 200 %}DOWN{% else %}{{ health_status }}{% endif %}"
-    health_message: "{{ health_message }}\nService health check: {% if health_check_result.status == 200 %}Passed{% else %}Failed (Status: {{ health_check_result.status | default('Unreachable') }}){% endif %}"
-  when: health_check_result is defined
+    health_status: "{% if health_check_result is defined and (health_check_result.status | default(None)) != 200 %}DOWN{% else %}{{ health_status }}{% endif %}"
+    health_message: "{{ health_message }}\nService health check: {% if health_check_result is defined and (health_check_result.status | default(None)) == 200 %}Passed{% else %}Failed (Status: {{ health_check_result.status | default('Unreachable') }}){% endif %}"
+  when:
+    - health_check_result is defined
+    - health_check_result.status is defined
 
 - name: Send notification if health check fails and notifications are enabled
   ansible.builtin.uri:

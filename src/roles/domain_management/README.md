@@ -76,7 +76,7 @@ Each domain should have its own YAML file in the `domain_config_dir` with the fo
 domain: example.com
 hostname: mail.example.com
 webmail: webmail.example.com
-admin: admin.example.com
+admin: webmailadmin.example.com
 max_users: -1
 max_aliases: -1
 max_quota_bytes: -1

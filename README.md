@@ -84,7 +84,7 @@ This Ansible playbook automates the deployment and management of a [Mailu](https
 domain: yourdomain.com
 hostname: mail.yourdomain.com
 webmail: webmail.yourdomain.com
-admin: admin.yourdomain.com
+admin: webmailadmin.yourdomain.com
 
 users:
   - name: user1
@@ -143,6 +143,31 @@ ntfy_enabled: false  # Set to true to enable notifications
 ntfy_url: https://ntfy.sh  # Change to self-hosted URL if needed
 ntfy_topic: "mailu-alerts"  # Topic name for notifications
 ```
+
+### User and Ownership Variables: ansible_user vs. target_user
+
+**ansible_user** is the SSH user Ansible uses to connect to the target host. **target_user** is the system user that will own Mailu files, directories, and run Mailu-related services on the target host. By default, both are set to 'mailu' for security and production-readiness, but you can override them per host or group as needed.
+
+- **Default (in group_vars/all.yml):**
+  ```yaml
+  target_user: mailu
+  ansible_user: mailu
+  ```
+- **Override per host in inventory/hosts:**
+  ```ini
+  mail.example.com ansible_user=operations target_user=operations
+  mail2.example.com ansible_user=conan_the_deployer target_user=mailu
+  ```
+- **Override per group in group_vars/mygroup.yml:**
+  ```yaml
+  target_user: ansible
+  ansible_user: ansible
+  ```
+
+**Best Practice:**
+- Always use `target_user` for file ownership and service management in roles and playbooks.
+- Always use `ansible_user` for SSH connection.
+- Document any overrides in your inventory or group_vars for clarity.
 
 ## Usage
 

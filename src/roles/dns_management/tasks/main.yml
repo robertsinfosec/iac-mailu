@@ -37,11 +37,10 @@
   vars:
     domain: "{{ domain_cfg.domain }}"
     server_ip: "{{ server_public_ip }}"
+    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
   loop: "{{ loaded_domains.results }}"
   loop_control:
     loop_var: domain_item
-  vars:
-    domain_cfg: "{{ domain_item.ansible_facts.domain_config }}"
   when: loaded_domains is defined and loaded_domains.results is defined
 
 - name: Combine DNS records into single file
@@ -59,13 +58,6 @@
       - "You can find the complete DNS records at: {{ dns_records_dir }}/all_domains.dns"
       - "Individual domain DNS records are in: {{ dns_records_dir }}/<domain>.dns"
       - "Please ensure these records are properly configured in your DNS provider."
-
----
-# DNS Management role main tasks
-
-- name: Include Cloudflare DNS management
-  ansible.builtin.include_tasks: cloudflare_dns.yml
-  when: dns_provider == "cloudflare"
 
 # Placeholder for future DNS providers
 # - name: Include AWS Route53 DNS management

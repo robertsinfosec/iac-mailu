@@ -92,7 +92,7 @@
     state: present
   delegate_to: localhost
 
-- name: Ensure A record for admin hostname exists (e.g., admin.example.com)
+- name: Ensure A record for admin hostname exists (e.g., webmailadmin.example.com)
   community.general.cloudflare_dns:
     zone: "{{ domain_cfg.domain }}"
     record: "{{ domain_cfg.admin | regex_replace('\\.' + domain_cfg.domain + '$', '') }}" # Extract subdomain part

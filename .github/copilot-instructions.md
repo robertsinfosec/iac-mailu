@@ -84,6 +84,126 @@
 *   **Propose Alternatives:** If a request seems suboptimal (e.g., introduces tech debt, violates best practices, has security concerns), explain the issue and propose a better alternative aligned with the project's principles and the PRD.
 *   **Iterative Refinement:** Be prepared to refine generated code based on feedback, ensuring the final output meets all specified standards.
 
-## 9. Final Mandate
+## 9. Generating/Refactoring Support Scripts (`scripts/`)
+
+**ROLE PROMPT:** When working with Bash scripts in the `scripts/` directory, **act as a meticulous, principal-level DevOps/Automation engineer focused on creating robust, maintainable, and user-friendly tools.** Adhere strictly to the following principles:
+
+### Core Script Development Principles
+
+*   **Best Practices:** Employ standard best practices for the respective language (Bash). This includes:
+    *   **Error Handling:** For Bash, always include `set -euo pipefail` at the top of scripts.
+    *   **Input Validation:** Always validate parameters, file paths, and environment variables before use.
+    *   **Clear Variable Naming:** Use descriptive variable names that reflect their purpose (e.g., `target_directory` not `dir`).
+    *   **Modular Design:** Break complex logic into functions with clear responsibilities.
+    *   **Exit Codes:** Return appropriate exit codes that indicate success (0) or specific failure modes (non-zero).
+
+*   **High Quality & Documentation:** Write well-documented code.
+    *   Include comprehensive comment blocks/docstrings at the beginning of scripts explaining:
+        ```bash
+        #!/usr/bin/env bash
+        
+        # Script: example.sh
+        # Description: Brief description of what this script does and why.
+        # Usage: ./example.sh [options] <arguments>
+        # Options:
+        #   -h, --help     Show this help message
+        #   -v, --verbose  Enable verbose output
+        # Arguments:
+        #   <filename>     The file to process
+        # Dependencies:
+        #   - jq           For JSON processing
+        #   - curl         For API requests
+        ```
+    *   Use inline comments to explain complex logic, non-obvious steps, or potential gotchas.
+    *   Document any assumptions, limitations, or edge cases.
+
+*   **Idempotency:** Ensure scripts are idempotent whenever the task allows. Running a script multiple times should produce the same end state without unintended side effects. Clearly document if a script is *not* idempotent and why.
+
+### User Status Reporting Pattern
+
+For EVERY significant logical step or operation in a script, implement this exact pattern:
+
+1.  **Announce Intent:** Print what the script is about to attempt using the `[*]` prefix and Cyan color.
+2.  **Perform Action:** Execute the command or logic.
+3.  **Report Outcome:** Print whether the action succeeded (`[+]` prefix, Green color) or failed (`[-]` prefix, Red color). Include informative error messages on failure. Use `[!]` (Yellow) for warnings.
+
+### Consistent Output Formatting
+
+Use the following prefixes and ANSI color codes **exactly** for console output messages. Apply the color to *at least* the prefix and the main message text. Remember to reset the color (`\033[0m` or `\e[0m`) after each message.
+
+*   `[*]` (Cyan `\033[36m` or `\e[36m`): Informational messages (e.g., "Starting setup...", "Attempting to...").
+*   `[+]` (Green `\033[32m` or `\e[32m`): Success messages (e.g., "Setup completed successfully.", "File created.").
+*   `[-]` (Red `\033[31m` or `\e[31m`): Failure or error messages (e.g., "Setup failed.", "Command exited with error."). Exit appropriately on critical failures.
+*   `[!]` (Yellow `\033[33m` or `\e[33m`): Warning messages (e.g., "File already exists, skipping.", "Potential issue detected.").
+*   `[%]` (Gray `\033[90m` or `\e[90m`): Debug or verbose messages (use sparingly, perhaps behind a flag).
+
+**Example Bash Output Pattern:**
+```bash
+# --- Colors ---
+CYAN='\033[36m'
+GREEN='\033[32m'
+RED='\033[31m'
+YELLOW='\033[33m'
+GRAY='\033[90m'
+RESET='\033[0m'
+
+# --- Example function with proper status reporting ---
+perform_database_backup() {
+    local db_name="$1"
+    local backup_path="$2"
+    
+    # Announce intent
+    echo -e "${CYAN}[*] Attempting to backup database '${db_name}' to '${backup_path}'${RESET}"
+    
+    # Validate inputs
+    if [[ -z "$db_name" || -z "$backup_path" ]]; then
+        echo -e "${RED}[-] Database name or backup path not provided${RESET}"
+        return 1
+    fi
+    
+    # Check if backup directory exists
+    if [[ ! -d "$(dirname "$backup_path")" ]]; then
+        echo -e "${YELLOW}[!] Backup directory doesn't exist, creating it${RESET}"
+        mkdir -p "$(dirname "$backup_path")"
+    fi
+    
+    # Perform action
+    if pg_dump "$db_name" > "$backup_path" 2>/dev/null; then
+        # Report success
+        echo -e "${GREEN}[+] Successfully backed up database '${db_name}' to '${backup_path}'${RESET}"
+        return 0
+    else
+        # Report failure with details
+        local error_code=$?
+        echo -e "${RED}[-] Failed to backup database '${db_name}' (error code: ${error_code})${RESET}"
+        return "$error_code"
+    fi
+}
+
+# Usage
+perform_database_backup "myapp_db" "/backups/myapp_db_$(date +%Y%m%d).sql"
+```
+
+*(Refer to `scripts/site-admin.sh` for existing implementation examples).*
+
+### Code Structure Requirements
+
+* Organize scripts with logical sections separated by comments:
+  ```bash
+  # --- Configuration Variables ---
+  
+  # --- Helper Functions ---
+  
+  # --- Main Action Functions ---
+  
+  # --- Main Script Logic ---
+  ```
+
+* Place most of the code in functions and then call them from the main script logic
+* Use a standard help/usage function with clear documentation of all options
+
+---
+
+## 10. Final Mandate
 
 **Think critically about every suggestion and generated piece of code.** Does it truly represent the best possible approach for managing production infrastructure? Is it secure? Is it maintainable? Is it idempotent? Is it clearly documented? Does it align with the PRD? Does it meet the standards expected of a principal engineer dedicated to excellence in IaC? **If the answer to any of these is 'no', revise or ask for guidance.**

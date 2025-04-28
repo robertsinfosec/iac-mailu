@@ -3,7 +3,7 @@
 domain: example.com
 hostname: mail.example.com
 webmail: webmail.example.com
-admin: admin.example.com
+admin: webmailadmin.example.com
 aliases:
   - example.org
   - example.net

@@ -7,8 +7,15 @@ mailu_base_dir: /opt/mailu
 
 # Target system user for file ownership and service management
 # Type: string
-# Default: "mailuadmin"
-target_user: mailuadmin
+# Default: "mailu" (secure, production-ready default)
+# This user will own Mailu files, directories, and run Mailu-related services.
+# Override per host or group in inventory or host_vars/group_vars as needed.
+# Example (in inventory/hosts):
+#   mail.example.com ansible_user=operations target_user=operations
+# Example (in group_vars/operations.yml):
+#   target_user: operations
+#
+target_user: mailu
 
 # System timezone
 # Type: string
@@ -17,7 +24,12 @@ timezone: UTC
 
 # Ansible SSH connection user (can also be set in inventory)
 # Type: string
-ansible_user: mailuadmin
+# Default: "mailu"
+# This is the user Ansible will use to connect via SSH.
+# Override per host or group in inventory or host_vars/group_vars as needed.
+# Example (in inventory/hosts):
+#   mail.example.com ansible_user=conan_the_deployer
+ansible_user: mailu
 
 # Version pins for all core components
 mailu_version: "1.9.2"           # Mailu version to deploy

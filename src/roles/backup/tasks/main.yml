@@ -69,7 +69,7 @@
     - backup_azure_enabled | bool
 
 - name: Install Google Cloud SDK if GCP Storage backend is enabled
-  ansible.builtin.block:
+  block:
     - name: Add Google Cloud SDK apt key
       ansible.builtin.apt_key:
         url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
@@ -77,9 +77,9 @@
 
     - name: Add Google Cloud SDK apt repository
       ansible.builtin.apt_repository:
-        repo: "deb https://packages.cloud.google.com/apt cloud-sdk main"
+        repo: "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main"
         state: present
-        
+
     - name: Install Google Cloud SDK
       ansible.builtin.apt:
         name: google-cloud-sdk

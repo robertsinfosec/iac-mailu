@@ -1,0 +1,40 @@
+{#
+  sshd_config.j2 - Hardened SSH daemon configuration for iac-mailu
+
+  This template is rendered by the hardening role to enforce secure SSH settings.
+  All variables must be defined in group_vars/all.yml or role defaults.
+  Reference: docs/PRD.md (Security First, OS/SSH Hardening)
+
+  Required variables:
+    - ssh_port (int): SSH port to listen on
+    - ssh_allowed_users (list): Users allowed to SSH
+    - ansible_user (string): Ansible SSH user (should be included in allowed users)
+  Optional variables:
+    - ssh_banner (string): Path to SSH warning banner (default: /etc/issue.net)
+    - ssh_permit_root_login (string): 'no' (default, recommended)
+    - ssh_password_auth (string): 'no' (default, recommended)
+#}
+
+# Hardened SSH configuration for production
+Port {{ ssh_port | default(22) }}
+Protocol 2
+PermitRootLogin {{ ssh_permit_root_login | default('no') }}
+PubkeyAuthentication yes
+PasswordAuthentication {{ ssh_password_auth | default('no') }}
+ChallengeResponseAuthentication no
+UsePAM yes
+AllowUsers {% for user in ssh_allowed_users %}{{ user }} {% endfor %}
+AllowTcpForwarding no
+X11Forwarding no
+PrintMotd no
+PrintLastLog yes
+ClientAliveInterval 300
+ClientAliveCountMax 2
+LoginGraceTime 30
+MaxAuthTries 3
+MaxSessions 2
+Banner {{ ssh_banner | default('/etc/issue.net') }}
+Ciphers aes256-gcm@openssh.com,chacha20-poly1305@openssh.com,aes256-ctr
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
+# End of hardened sshd_config

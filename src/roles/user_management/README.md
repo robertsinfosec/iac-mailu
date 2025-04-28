@@ -75,7 +75,7 @@ Each domain should have its own YAML file in the `domain_config_dir` with users 
 domain: example.com
 hostname: mail.example.com
 webmail: webmail.example.com
-admin: admin.example.com
+admin: webmailadmin.example.com
 
 users:
   - name: user1

@@ -69,7 +69,7 @@ Update the following files with your specific information:
    domain: yourdomain.com
    hostname: mail.yourdomain.com
    webmail: webmail.yourdomain.com
-   admin: admin.yourdomain.com
+   admin: webmailadmin.yourdomain.com
 
    users:
      - name: user1

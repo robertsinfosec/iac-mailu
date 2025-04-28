@@ -13,7 +13,7 @@
                   domain: "example.com"
                   hostname: "mail.example.com"
                   webmail: "webmail.example.com"
-                  admin: "admin.example.com"
+                  admin: "webmailadmin.example.com"
 
     - name: Create primary domain fact
       ansible.builtin.set_fact:

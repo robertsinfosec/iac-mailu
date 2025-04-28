@@ -1,3 +1,4 @@
-# meta/main.yml for common role
 ---
-depends: []
+# No dependencies for the common role
+# See PRD: roles must declare dependencies using 'dependencies', not 'depends'.
+dependencies: []

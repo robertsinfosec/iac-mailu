@@ -4,20 +4,26 @@
   become: true
   vars_files:
     - ../vault/secrets.yml # Load vaulted secrets
-  
+
   tasks:
+    # Find domain configuration files on the control node (not the remote host)
     - name: Find domain configuration files
       ansible.builtin.find:
         paths: "{{ playbook_dir }}/../domains"
         patterns: '*.yml'
         recurse: no
       register: domain_files
+      delegate_to: localhost
+      become: false
 
+    # Load variables from the first domain file (for health check) on the control node
     - name: Load variables from first domain file (for health check)
       ansible.builtin.include_vars:
         file: "{{ domain_files.files[0].path }}"
         name: domain_config
       when: domain_files.files | length > 0
+      delegate_to: localhost
+      become: false
 
     - name: Run health check
       ansible.builtin.include_role:

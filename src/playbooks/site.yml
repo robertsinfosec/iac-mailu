@@ -5,6 +5,55 @@
   vars_files:
     - ../vault/secrets.yml # Load vaulted secrets
 
+  pre_tasks:
+    - name: Debug SSH variables before assertion
+      ansible.builtin.debug:
+        msg: "target_user = {{ target_user | default('UNDEFINED') }}, ansible_user = {{ ansible_user | default('UNDEFINED') }}"
+      tags: [always]
+
+    - name: Debug target_user
+      ansible.builtin.debug:
+        var: target_user
+      ignore_errors: true # Allow playbook to continue even if undefined
+      tags: [always]
+
+    - name: Assert target_user is defined
+      ansible.builtin.assert:
+        that:
+          - target_user is defined
+        fail_msg: "'target_user' is not defined."
+      tags: [always]
+
+    - name: Assert target_user is not empty
+      ansible.builtin.assert:
+        that:
+          - target_user | length > 0
+        fail_msg: "'target_user' is defined but empty."
+      tags: [always]
+
+    - name: Assert required SSH variables are defined
+      ansible.builtin.assert:
+        that:
+          - ansible_user is defined
+          - ansible_user | length > 0
+        fail_msg: |
+          One or more required variables for SSH hardening are missing or empty.
+          Please ensure 'target_user' and 'ansible_user' are defined in group_vars/all.yml or inventory.
+      tags: [always]
+
+    - name: Expand ssh_allowed_users to concrete values
+      ansible.builtin.set_fact:
+        ssh_allowed_users: "{{ [target_user, ansible_user] | unique }}"
+      tags: [always]
+
+    - name: Display check mode warning
+      ansible.builtin.debug:
+        msg: |
+          [*] CHECK MODE ENABLED: This is a dry run. No changes will be made to the target server(s).
+          [*] Review the output below to see what would change, but nothing will be modified.
+      when: ansible_check_mode | bool
+      tags: [always]
+
   roles:
     # System preparation and security
     - role: common

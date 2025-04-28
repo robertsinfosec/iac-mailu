@@ -126,7 +126,7 @@ To enforce the "Strict Modularity" principle, the primary responsibilities of co
 domain: fun-project.org
 hostname: mail.fun-project.org
 webmail: webmail.fun-project.org
-admin: admin.fun-project.org
+admin: webmailadmin.fun-project.org
 
 users:
   - name: support

@@ -1,0 +1,260 @@
+# Defines the desired command structure for mail-admin.sh
+# Used as a specification for development and validation.
+
+cli_name: mail-admin.sh
+description: Unified CLI dispatcher for managing iac-mailu configuration, secrets, and deployment.
+
+# Top-level commands that are direct actions or shortcuts
+global_commands:
+  list-prereqs:
+    description: List all required tools (and versions, if available) and their versions so that the sysadmin can validate.
+    arguments: []
+  install-prereqs:
+    description: Install prerequisites (e.g., yq, ansible).
+    arguments: []
+  check-prereqs:
+    description: Verify required tools (ansible, yq, git) are installed.
+    arguments: []
+  help:
+    description: Show the main help message or help for a specific module.
+    arguments:
+      - name: module_name
+        required: false
+        description: Optional module name to get specific help (e.g., domain, user).
+
+# Modules encapsulate related functionality
+modules:
+  domain:
+    description: Manage domain configurations (src/domains/*.yml).
+    commands:
+      help:
+        description: Show help for domain module commands. Lists all domain commands or shows detailed help for a specific command.
+        arguments:
+          - name: command_name # Optional: Specify a command like 'list', 'view', 'add', 'remove' for detailed help
+            required: false
+            description: Optional command name within the domain module to get specific help (e.g., list, view, add, remove).
+      list:
+        description: List all configured domains found in the domains directory (e.g., example.com from src/domains/example.com.yml).
+        arguments: []
+      view:
+        description: View the formatted YAML configuration of a specific domain file (src/domains/<domain_name>.yml).
+        arguments:
+          - name: domain_name
+            required: false # If not provided, will prompt the user to select from existing domains.
+            prompt_if_missing: true
+            description: The fully qualified domain name whose configuration file should be viewed (e.g., example.com).
+            validation: rfc1035_domain # Suggests a validation rule
+      add:
+        description: Add a new domain configuration file (src/domains/<domain_name>.yml) interactively, prompting for necessary details.
+        arguments:
+          - name: domain_name
+            required: false # If not provided, will prompt the user for the new domain name.
+            prompt_if_missing: true
+            description: The fully qualified domain name to add (e.g., example.com).
+            validation: rfc1035_domain # Suggests a validation rule
+      remove:
+        description: Remove or disable a domain configuration file (src/domains/<domain_name>.yml). Warns about associated secrets in the vault that might need manual cleanup. Requires confirmation.
+        arguments:
+          - name: domain_name
+            required: false # If not provided, will prompt the user to select from existing domains.
+            prompt_if_missing: true
+            description: The fully qualified domain name whose configuration file should be removed or disabled.
+            validation: rfc1035_domain
+          - name: force
+            required: false # If not provided, will prompt the user for confirmation.
+            prompt_if_missing: true
+            description: Confirm removal of the domain configuration file without interactive prompt. WARNING - This action is irreversible and does not automatically remove associated vault secrets.
+            validation: force_confirmation # Suggests a validation rule
+          - name: disable
+            required: false # If not provided, the domain will be removed instead of disabled
+            prompt_if_missing: false
+            description: Disable the domain instead of removing it (renames to <domain_name>.yml.disabled for later re-enabling)
+            validation: boolean # Suggests a validation rule
+
+  user:
+    description: Manage users within domain configurations.
+    commands:
+      help:
+        description: Show help for user module commands. Lists all user commands or shows detailed help for a specific command.
+        arguments:
+          - name: command_name # Optional: Specify a command like 'list', 'add', 'remove' for detailed help
+            required: false
+            description: Optional command name within the user module to get specific help (e.g., list, add, remove).
+      list:
+        description: List users defined within a specific domain's configuration file.
+        arguments:
+          - name: domain_name
+            required: false
+            prompt_if_missing: true
+            description: The domain whose users should be listed.
+            validation: rfc1035_domain
+      view:
+        description: View the configuration of a specific user within a domain.
+        arguments:
+          - name: domain_name
+            required: false
+            prompt_if_missing: true
+            description: The domain to view the user from.
+            validation: rfc1035_domain
+          - name: username
+            required: false
+            prompt_if_missing: true
+            description: The username to view.
+            validation: mail_username # Suggests a validation rule
+      add:
+        description: Add a new user to a domain's configuration file and add their password to the vault.
+        arguments:
+          - name: domain_name
+            required: false
+            prompt_if_missing: true
+            description: The domain to add the user to.
+            validation: rfc1035_domain
+          - name: username
+            required: true
+            prompt_if_missing: true
+            description: The username part of the email address (e.g., 'support').
+            validation: mail_username # Suggests a validation rule
+      remove:
+        description: Remove a user entry from a domain's configuration file. Warns about associated vault secret.Confirm with user or allow --force.
+        arguments:
+          - name: domain_name
+            required: false
+            prompt_if_missing: true
+            description: The domain to remove the user from.
+            validation: rfc1035_domain
+          - name: username
+            required: false
+            prompt_if_missing: true
+            description: The username to remove.
+            validation: mail_username
+          - name: force
+            required: false
+            prompt_if_missing: true
+            description: Confirm removal of the user. WARNING - This is irreversible.
+            validation: force_confirmation # Suggests a validation rule
+
+  vault:
+    description: Manage secrets in the Ansible vault (src/vault/secrets.yml).
+    commands:
+      help:
+        description: Show help for vault module commands. Lists all vault commands or shows detailed help for a specific command.
+        arguments:
+          - name: command_name # Optional: Specify a command like 'list', 'view', 'edit', 'encrypt', 'decrypt' for detailed help
+            required: false
+            description: Optional command name within the vault module to get specific help (e.g., list, view, edit, encrypt, decrypt).
+      list:
+        description: List all top-level keys in the vault file (src/vault/secrets.yml).
+        arguments: []
+      view:
+        description: View the decrypted vault content (requires vault password, or read environment variable named ANSIBLE_VAULT_PASSWORD).
+        arguments:
+          - name: key
+            required: false
+            prompt_if_missing: true
+            description: The top-level YAML key to view (e.g., vault_user_example_com).
+            validation: vault_key_exists # Suggests a validation rule
+      edit:
+        description: Edit the encrypted vault file interactively (requires vault password, or read environment variable named ANSIBLE_VAULT_PASSWORD).
+        arguments: []
+      rekey:
+        description: Change the vault password interactively (requires existing vault password, or read environment variable named ANSIBLE_VAULT_PASSWORD).
+        arguments: []
+      add:
+        description: Add or update a key-value pair in the vault (requires yq).
+        arguments:
+          - name: key
+            required: false
+            prompt_if_missing: true
+            description: The top-level YAML key for the secret (e.g., vault_user_example_com).
+          - name: value
+            required: false
+            prompt_if_missing: true # Prompt for the secret value itself
+            description: The secret value to store.
+            is_secret: true # Indicates input should be masked
+      remove:
+        description: Remove a key-value pair from the vault (requires yq). Confirm with user or allow --force.
+        arguments:
+          - name: key
+            required: false
+            prompt_if_missing: true
+            description: The top-level YAML key to remove.
+          - name: force
+            required: false
+            prompt_if_missing: true
+            description: Confirm removal of the key-value pair. WARNING - This is irreversible.
+            validation: force_confirmation # Suggests a validation rule
+      init: 
+        description: Initialize the vault file if it doesn't exist (requires yq).
+        arguments: []
+      destroy:
+        description: Destroy the vault file (requires yq). WARNING - This is irreversible. Confirm with user or allow --force.
+        arguments:
+          - name: force
+            required: false
+            prompt_if_missing: true
+            description: Confirm destruction of the vault file. WARNING - This is irreversible.
+            validation: force_confirmation # Suggests a validation rule
+
+  playbook:
+    description: Run Ansible playbooks located in src/playbooks/.
+    # Defines common playbook actions as subcommands
+    commands:
+      help:
+        description: Show help for playbook module commands. Lists all playbook commands or shows detailed help for a specific command.
+        arguments:
+          - name: command_name # Optional: Specify a command like 'deploy', 'healthcheck', 'backup', 'restore' for detailed help
+            required: false
+            description: Optional command name within the playbook module to get specific help (e.g., deploy, healthcheck, backup, restore).
+      deploy:
+        description: Run the main deployment playbook (site.yml).
+        arguments:
+          - name: dryrun
+            required: false
+            description: Run the playbook in dry-run mode (e.g., --check).
+            validation: boolean # Suggests a validation rule
+          - name: ansible_options
+            required: false
+            description: Additional options passed directly to ansible-playbook (e.g., --check, --tags mailu, --limit host).
+            allow_arbitrary: true # Allows passing unknown flags/options through
+      healthcheck:
+        description: Run the health check playbook (health_check.yml).
+        arguments:
+          - name: ansible_options
+            required: false
+            description: Additional options passed directly to ansible-playbook.
+            allow_arbitrary: true
+      backup:
+        description: Run the backup playbook (backup.yml).
+        arguments:
+          - name: ansible_options
+            required: false
+            description: Additional options passed directly to ansible-playbook.
+            allow_arbitrary: true
+      restore:
+        description: Run the restore playbook (restore.yml). Requires confirmation.
+        arguments:
+          - name: ansible_options
+            required: false
+            description: Additional options passed directly to ansible-playbook.
+            allow_arbitrary: true
+      # Allows running *any* playbook by name
+      run:
+        description: Run a specific playbook file from the playbooks directory.
+        arguments:
+          - name: playbook_filename
+            required: true
+            prompt_if_missing: false # Less likely to prompt for this
+            description: The name of the playbook file (e.g., manage_users.yml).
+            validation: playbook_exists # Suggests checking if file exists in playbooks dir
+          - name: ansible_options
+            required: false
+            description: Additional options passed directly to ansible-playbook.
+            allow_arbitrary: true
+
+# Define shortcuts for convenience (maps directly to module commands)
+# These are handled by the main dispatcher script.
+shortcuts:
+  deploy: playbook deploy
+  healthcheck: playbook healthcheck
+  backup: playbook backup
+  restore: playbook restore

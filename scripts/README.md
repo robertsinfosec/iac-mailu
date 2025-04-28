@@ -31,7 +31,12 @@ You can install the correct `yq` version using the script itself:
 
 -   `domain list`: List all configured mail domains found in `src/domains/`.
 -   `domain add [--domain <domain_name>]`: Interactively prompts to add a new domain configuration file (`src/domains/<domain_name>.yml`).
--   `domain remove [--domain <domain_name>]`: Removes the specified domain configuration file.
+-   `domain remove [--domain <domain_name>] [--force] [--disable]`: Removes or disables the specified domain configuration file. 
+    - Without arguments, prompts interactively to select a domain.
+    - `--force`: Skips the confirmation prompt.
+    - `--disable`: Instead of deleting the domain file, renames it to `<domain_name>.yml.disabled`, allowing for easy re-enabling later.
+    - Disabled domains can be re-enabled by using `domain add` with the same domain name.
+-   `domain view [--domain <domain_name>]`: Views the formatted YAML configuration of a specific domain. Without `--domain`, prompts interactively to select from existing domains.
 
 #### User Management (`user`)
 

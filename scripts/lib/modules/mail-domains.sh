@@ -56,7 +56,7 @@ domain_help() {
         echo "Commands:"
         echo "  list                List all configured domains (from src/domains/)"
         echo "  add <domain>        Add a new domain configuration interactively (validates input)"
-        echo "  remove <domain>     Remove a domain configuration file (does not touch secrets)"
+        echo "  remove <domain>     Remove or disable a domain configuration"
         echo "  view <domain>       View the formatted YAML configuration of a specific domain file"
         echo "  help [command]      Show this help or help for a specific command"
         echo ""
@@ -64,10 +64,12 @@ domain_help() {
         echo "  mail-admin.sh domain list"
         echo "  mail-admin.sh domain add example.com"
         echo "  mail-admin.sh domain remove example.com"
+        echo "  mail-admin.sh domain remove example.com --disable  # Disable instead of remove"
         echo "  mail-admin.sh domain help add      # Get help specifically for the 'add' command"
         echo ""
         echo "Notes:"
         echo "- Domain config files are stored in src/domains/<domain>.yml."
+        echo "- Disabled domains are stored with a .disabled extension."
         echo "- User entries and secrets must be managed separately."
         echo "- See docs/PRD.md for schema and operational details."
     else
@@ -93,32 +95,52 @@ domain_help() {
                 echo "  <domain_name>  The fully qualified domain name to add (e.g., example.com)"
                 echo ""
                 echo "The domain name must follow RFC1035 format requirements."
+                echo "All hostnames are validated to ensure they follow RFC1035 format."
+                echo ""
+                echo "If a disabled configuration exists (.disabled extension), you'll be given"
+                echo "the option to re-enable it instead of creating a new one."
+                echo ""
                 echo "After creating a domain, use 'mail-admin.sh user add <username> <domain>' to add users."
                 ;;
             remove)
                 echo -e "${CYAN}[*] Help for 'domain remove' command${RESET}"
-                echo "Usage: mail-admin.sh domain remove <domain_name> [--force]"
+                echo "Usage: mail-admin.sh domain remove <domain_name> [--force] [--disable]"
                 echo ""
-                echo "Removes a domain configuration file (src/domains/<domain_name>.yml)."
-                echo "This action requires confirmation and only removes the configuration file."
+                echo "Removes or disables a domain configuration file (src/domains/<domain_name>.yml)."
+                echo "This action requires confirmation and only affects the configuration file."
                 echo ""
                 echo "Arguments:"
-                echo "  <domain_name>  The fully qualified domain name to remove"
+                echo "  <domain_name>  The fully qualified domain name to remove (optional; if not"
+                echo "                 provided, you'll be prompted to select from available domains)"
                 echo "  [--force]      Optional flag to force removal without confirmation"
+                echo "  [--disable]    Optional flag to disable the domain instead of removing it"
+                echo "                 (renames to <domain_name>.yml.disabled for later re-enabling)"
+                echo ""
+                echo "Examples:"
+                echo "  mail-admin.sh domain remove example.com          # Interactive prompt before removing"
+                echo "  mail-admin.sh domain remove example.com --force  # Remove without confirmation"
+                echo "  mail-admin.sh domain remove example.com --disable # Disable instead of removing"
+                echo "  mail-admin.sh domain remove                      # Select domain interactively"
                 echo ""
                 echo "WARNING: This does not automatically remove associated secrets in the vault"
                 echo "         that might need manual cleanup."
                 ;;
             view)
                 echo -e "${CYAN}[*] Help for 'domain view' command${RESET}"
-                echo "Usage: mail-admin.sh domain view <domain_name>"
+                echo "Usage: mail-admin.sh domain view [domain_name]"
                 echo ""
                 echo "Views the formatted YAML configuration of a specific domain file"
                 echo "(src/domains/<domain_name>.yml)."
                 echo ""
                 echo "Arguments:"
-                echo "  <domain_name>  The fully qualified domain name whose configuration"
+                echo "  [domain_name]  The fully qualified domain name whose configuration"
                 echo "                 file should be viewed (e.g., example.com)"
+                echo "                 If not provided, you'll be prompted to select from"
+                echo "                 available domains."
+                echo ""
+                echo "Example:"
+                echo "  mail-admin.sh domain view                # Select domain interactively"
+                echo "  mail-admin.sh domain view example.com    # View specific domain"
                 ;;
             help)
                 echo -e "${CYAN}[*] Help for 'domain help' command${RESET}"
@@ -181,6 +203,7 @@ domain_add() {
     # Validate domain format (RFC 1035)
     if ! [[ "$domain_name" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+$ ]]; then
         print_error "Invalid domain name format: $domain_name"
+        print_warn "Domain must follow RFC 1035 format (e.g., example.com)"
         exit 1
     fi
     if [[ -f "$domain_file" ]]; then
@@ -188,10 +211,67 @@ domain_add() {
         exit 1
     fi
 
+    # Check if disabled version exists
+    if [[ -f "${domain_file}.disabled" ]]; then
+        print_warn "A disabled configuration for this domain exists: ${domain_file}.disabled"
+        read -rp "Would you like to re-enable it instead of creating a new one? [y/N]: " reenable
+        if [[ "${reenable,,}" == "y" ]]; then
+            if mv "${domain_file}.disabled" "${domain_file}"; then
+                print_success "Domain configuration re-enabled: ${domain_file}"
+                # Continue to view to show the user what they've re-enabled
+                domain_view "$domain_name"
+                return 0
+            else
+                print_error "Failed to re-enable domain configuration"
+                exit 1
+            fi
+        fi
+    fi
+
     print_info "Adding domain configuration for: $domain_name"
-    read -rp "Mail hostname [mail.${domain_name}]: " hostname; hostname=${hostname:-mail.${domain_name}}
-    read -rp "Webmail hostname [webmail.${domain_name}]: " webmail; webmail=${webmail:-webmail.${domain_name}}
-    read -rp "Admin hostname [webmailadmin.${domain_name}]: " admin; admin=${admin:-webmailadmin.${domain_name}}
+    
+    # Default hostnames
+    local default_mail="mail.${domain_name}"
+    local default_webmail="webmail.${domain_name}"
+    local default_admin="webmailadmin.${domain_name}"
+    
+    # Get and validate hostnames
+    local hostname webmail admin
+    while true; do
+        read -rp "Mail hostname [${default_mail}]: " hostname
+        hostname=${hostname:-$default_mail}
+        # Validate hostname format
+        if [[ "$hostname" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+$ ]]; then
+            break
+        else
+            print_error "Invalid hostname format: $hostname"
+            print_warn "Hostname must follow RFC 1035 format (e.g., mail.example.com)"
+        fi
+    done
+    
+    while true; do
+        read -rp "Webmail hostname [${default_webmail}]: " webmail
+        webmail=${webmail:-$default_webmail}
+        # Validate hostname format
+        if [[ "$webmail" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+$ ]]; then
+            break
+        else
+            print_error "Invalid hostname format: $webmail"
+            print_warn "Hostname must follow RFC 1035 format (e.g., webmail.example.com)"
+        fi
+    done
+    
+    while true; do
+        read -rp "Admin hostname [${default_admin}]: " admin
+        admin=${admin:-$default_admin}
+        # Validate hostname format
+        if [[ "$admin" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+$ ]]; then
+            break
+        else
+            print_error "Invalid hostname format: $admin"
+            print_warn "Hostname must follow RFC 1035 format (e.g., webmailadmin.example.com)"
+        fi
+    done
 
     print_info "Creating domain file: $domain_file"
     {
@@ -229,6 +309,7 @@ domain_remove() {
     # Parse arguments
     local domain_name=""
     local force=false
+    local disable=false
 
     # Process arguments
     while [[ $# -gt 0 ]]; do
@@ -237,9 +318,13 @@ domain_remove() {
                 force=true
                 shift
                 ;;
+            --disable)
+                disable=true
+                shift
+                ;;
             -*)
                 print_error "Unknown option: $1"
-                print_warn "Usage: mail-admin.sh domain remove <domain_name> [--force]"
+                print_warn "Usage: mail-admin.sh domain remove <domain_name> [--force] [--disable]"
                 exit 1
                 ;;
             *)
@@ -248,18 +333,54 @@ domain_remove() {
                     shift
                 else
                     print_error "Too many arguments"
-                    print_warn "Usage: mail-admin.sh domain remove <domain_name> [--force]"
+                    print_warn "Usage: mail-admin.sh domain remove <domain_name> [--force] [--disable]"
                     exit 1
                 fi
                 ;;
         esac
     done
 
-    # Defensive: Check for required argument
-    if [[ -z "${domain_name}" ]]; then
-        print_error "Missing required argument: <domain_name>"
-        print_warn "Usage: mail-admin.sh domain remove <domain_name> [--force]"
-        exit 1
+    # If no domain provided, offer interactive selection
+    if [[ -z "$domain_name" ]]; then
+        # Get list of available domains
+        local domain_files=()
+        local file
+        shopt -s nullglob
+        for file in "$DOMAINS_DIR"/*.yml; do
+            [[ "$file" == *.disabled ]] && continue
+            domain_files+=("$file")
+        done
+        shopt -u nullglob
+
+        # Check if any domains exist
+        if [[ ${#domain_files[@]} -eq 0 ]]; then
+            print_warn "No domain configuration files (*.yml) found."
+            print_error "No domains available to remove."
+            exit 1
+        fi
+
+        print_info "No domain specified. Please select from the available domains:"
+        
+        # Display domain options
+        local i=1
+        for file in "${domain_files[@]}"; do
+            echo "  $i) $(basename "${file%.yml}")"
+            ((i++))
+        done
+
+        # Prompt for selection
+        local selection
+        read -rp "Enter domain number to remove (1-${#domain_files[@]}): " selection
+        
+        # Validate selection
+        if ! [[ "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt ${#domain_files[@]} ]]; then
+            print_error "Invalid selection: $selection"
+            exit 1
+        fi
+
+        # Set domain file based on selection
+        local domain_file="${domain_files[$((selection-1))]}"
+        domain_name="$(basename "${domain_file%.yml}")"
     fi
     
     local domain_file
@@ -270,26 +391,49 @@ domain_remove() {
         exit 1
     fi
 
+    # Set action based on disable flag
+    local action
+    local action_verb
+    local new_file="$domain_file"
+    if [[ "$disable" == "true" ]]; then
+        action="Disabling"
+        action_verb="disable"
+        new_file="${domain_file}.disabled"
+    else
+        action="Removing"
+        action_verb="remove"
+    fi
+
     # Prompt for confirmation unless --force is specified
     if [[ "$force" != "true" ]]; then
-        print_warn "This will remove the domain configuration file: $domain_file"
+        print_warn "This will $action_verb the domain configuration: $domain_file"
         print_warn "It does NOT automatically remove users or secrets from the vault."
-        read -rp "Are you sure you want to remove this domain configuration? [y/N]: " confirm
+        read -rp "Are you sure you want to $action_verb this domain configuration? [y/N]: " confirm
         if [[ "${confirm,,}" != "y" ]]; then
             print_info "Operation cancelled."
             exit 0
         fi
     else
-        print_warn "Force flag detected. Removing domain configuration without confirmation: $domain_file"
+        print_warn "Force flag detected. ${action} domain configuration without confirmation: $domain_file"
         print_warn "NOTE: This does NOT automatically remove users or secrets from the vault."
     fi
 
-    print_info "Removing domain file: $domain_file"
-    if rm -f "$domain_file"; then
-        print_success "Domain configuration file removed: $domain_file"
+    print_info "${action} domain file: $domain_file"
+    
+    if [[ "$disable" == "true" ]]; then
+        if mv "$domain_file" "$new_file"; then
+            print_success "Domain configuration disabled: $domain_file → $new_file"
+        else
+            print_error "Failed to disable domain configuration: $domain_file"
+            exit 1
+        fi
     else
-        print_error "Failed to remove domain configuration file: $domain_file"
-        exit 1
+        if rm -f "$domain_file"; then
+            print_success "Domain configuration removed: $domain_file"
+        else
+            print_error "Failed to remove domain configuration: $domain_file"
+            exit 1
+        fi
     fi
 }
 

@@ -12,6 +12,8 @@
 #   rekey         Change the vault password
 #   add <key> <value> Add/Update a key-value pair (plaintext value)
 #   remove <key>  Remove a key from the vault
+#   init          Initialize the vault file and password file if they don't exist
+#   destroy       Delete the vault file and password file (requires confirmation)
 #   help          Show this help message
 #
 
@@ -233,6 +235,151 @@ vault_remove_key() {
     success "Key '$key' removed from vault successfully."
 }
 
+vault_init() {
+    check_prerequisites "ansible-vault" "yq"
+    
+    info "Initializing vault system..."
+    
+    # 1. Check if vault password file exists, create if it doesn't
+    if [[ ! -f "$VAULT_PASS_FILE" ]]; then
+        info "Vault password file doesn't exist. Creating ${VAULT_PASS_FILE}..."
+        
+        # Generate a secure random password or prompt for one
+        local create_random_pass
+        read -p "Do you want to generate a random password? [Y/n]: " create_random_pass
+        create_random_pass="${create_random_pass:-Y}"
+        
+        if [[ "${create_random_pass^^}" == "Y" ]]; then
+            # Generate a secure random password (32 characters)
+            if command -v openssl &> /dev/null; then
+                password=$(openssl rand -base64 24)
+            else
+                # Fallback method if openssl is not available
+                password=$(head -c 24 /dev/urandom | base64)
+            fi
+            echo "$password" > "$VAULT_PASS_FILE"
+            success "Generated random vault password and saved to ${VAULT_PASS_FILE}"
+            warning "IMPORTANT: Keep this password file secure. Anyone with access to it can decrypt your secrets."
+        else
+            # Prompt for password
+            local password
+            local password_confirm
+            while true; do
+                read -s -p "Enter vault password: " password
+                echo
+                read -s -p "Confirm vault password: " password_confirm
+                echo
+                
+                if [[ "$password" == "$password_confirm" ]]; then
+                    echo "$password" > "$VAULT_PASS_FILE"
+                    break
+                else
+                    error "Passwords don't match. Please try again."
+                fi
+            done
+            success "Vault password saved to ${VAULT_PASS_FILE}"
+            warning "IMPORTANT: Keep this password file secure. Anyone with access to it can decrypt your secrets."
+        fi
+        
+        # Set appropriate permissions
+        chmod 600 "$VAULT_PASS_FILE"
+    else
+        info "Vault password file ${VAULT_PASS_FILE} already exists."
+    fi
+
+    # 2. Check if vault file exists, create if it doesn't
+    if [[ ! -f "$VAULT_FILE" ]]; then
+        info "Vault file doesn't exist. Creating ${VAULT_FILE}..."
+        
+        # Create vault directory if it doesn't exist
+        mkdir -p "$(dirname "$VAULT_FILE")"
+        
+        # Create a basic vault YAML file with a timestamp
+        local timestamp
+        timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        
+        # Create an initial YAML structure
+        cat > "$VAULT_FILE" << EOF
+# Ansible Vault file for iac-mailu
+# Created: $timestamp
+# 
+# This file contains sensitive information and should always be encrypted.
+# Use 'mail-admin.sh vault edit' to modify this file.
+
+# Example structure:
+# vault_user_example_com: "user_password"
+# vault_cloudflare_api_token: "your-cloudflare-token"
+# vault_mailu_admin_secret: "your-admin-secret"
+EOF
+
+        # Encrypt the new vault file
+        local vault_args
+        vault_args=$(get_vault_pass_args)
+        
+        if ! (cd "$SRC_DIR" && ansible-vault encrypt "$VAULT_FILE" $vault_args); then
+            error "Failed to encrypt new vault file."
+            return 1
+        fi
+        
+        success "Vault file created and encrypted: ${VAULT_FILE}"
+    elif ! grep -q "ANSIBLE_VAULT" "$VAULT_FILE"; then
+        # File exists but is not encrypted
+        warning "Vault file ${VAULT_FILE} exists but is not encrypted. Encrypting..."
+        
+        # Encrypt the existing vault file
+        local vault_args
+        vault_args=$(get_vault_pass_args)
+        
+        if ! (cd "$SRC_DIR" && ansible-vault encrypt "$VAULT_FILE" $vault_args); then
+            error "Failed to encrypt existing vault file."
+            return 1
+        fi
+        
+        success "Existing vault file encrypted: ${VAULT_FILE}"
+    else
+        info "Vault file ${VAULT_FILE} already exists and is encrypted."
+    fi
+    
+    success "Vault system initialized successfully."
+    info "You can now use 'mail-admin.sh vault add <key> <value>' to add secrets."
+}
+
+vault_destroy() {
+    local force="${1:-}"
+    local confirm="no"
+    
+    if [[ "$force" != "--force" ]]; then
+        warning "WARNING! This will permanently delete your vault file and password file."
+        warning "All secrets stored in the vault will be LOST FOREVER."
+        read -p "Are you absolutely sure you want to continue? Type 'yes' to confirm: " confirm
+        
+        if [[ "$confirm" != "yes" ]]; then
+            info "Operation cancelled."
+            return 0
+        fi
+    fi
+    
+    # Check if files exist before trying to delete them
+    if [[ -f "$VAULT_PASS_FILE" ]]; then
+        info "Deleting vault password file: ${VAULT_PASS_FILE}..."
+        rm -f "$VAULT_PASS_FILE"
+        success "Vault password file deleted."
+    else
+        info "Vault password file does not exist: ${VAULT_PASS_FILE}"
+    fi
+    
+    if [[ -f "$VAULT_FILE" ]]; then
+        info "Deleting vault file: ${VAULT_FILE}..."
+        rm -f "$VAULT_FILE"
+        success "Vault file deleted."
+    else
+        info "Vault file does not exist: ${VAULT_FILE}"
+    fi
+    
+    success "Vault system destroyed."
+    warning "If you need to use the vault again, run 'mail-admin.sh vault init' to initialize a new vault."
+}
+
 vault_help() {
     echo -e "\033[36m[*] Vault Management Module Help\033[0m"
     echo "Usage: mail-admin.sh vault <command> [options]"
@@ -245,12 +392,16 @@ vault_help() {
     echo "  rekey               Change the vault password"
     echo "  add <key> <value>   Add/Update a key-value pair (plaintext value)"
     echo "  remove <key>        Remove a key from the vault"
+    echo "  init                Initialize vault system (create password and vault file)"
+    echo "  destroy [--force]   Delete vault files (requires confirmation unless --force)"
     echo "  help, -h, --help    Show this help message"
     echo ""
     echo "Examples:"
     echo "  mail-admin.sh vault view"
     echo "  mail-admin.sh vault add vault_user_example_com 'SuperSecret'"
     echo "  mail-admin.sh vault remove vault_user_example_com"
+    echo "  mail-admin.sh vault init"
+    echo "  mail-admin.sh vault destroy"
     echo ""
     echo "Notes:"
     echo "- All secrets must be managed via Ansible Vault."
@@ -283,6 +434,12 @@ main() {
             ;;
         remove)
             vault_remove_key "$@"
+            ;;
+        init)
+            vault_init
+            ;;
+        destroy)
+            vault_destroy "$@"
             ;;
         help|-h|--help|"")
             vault_help
